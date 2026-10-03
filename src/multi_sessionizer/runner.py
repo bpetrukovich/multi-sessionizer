@@ -36,20 +36,25 @@ class Runner:
             return False
         return proc.returncode == 0
 
-    def existing_sessions(self) -> set[str]:
+    def existing_sessions(self) -> dict[str, str]:
         try:
             proc = subprocess.run(
-                [self._tmux, "list-sessions", "-F", "#{session_name}"],
+                [self._tmux, "list-sessions", "-F", "#{session_name}\t#{session_path}"],
                 capture_output=True,
                 text=True,
                 check=False,
                 env=self._env,
             )
         except OSError:
-            return set()
+            return {}
         if proc.returncode != 0:
-            return set()
-        return {line for line in proc.stdout.splitlines() if line}
+            return {}
+        sessions: dict[str, str] = {}
+        for line in proc.stdout.splitlines():
+            name, _, path = line.partition("\t")
+            if name and path:
+                sessions[name] = path
+        return sessions
 
     def zoxide_scores(self) -> str:
         try:

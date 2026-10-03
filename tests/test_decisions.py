@@ -11,7 +11,7 @@ def test_single_dir_attach():
         [],
         in_tmux=False,
         tmux_server_running=False,
-        existing=(),
+        existing={},
     ) == [
         cmd("zoxide", "add", "/a/my.project"),
         cmd("tmux", "new-session", "-ds", "my_project", "-c", "/a/my.project"),
@@ -25,7 +25,7 @@ def test_single_dir_reuses_existing_session():
         [],
         in_tmux=False,
         tmux_server_running=True,
-        existing=("my_project",),
+        existing={"my_project": "/a/my.project"},
     ) == [
         cmd("zoxide", "add", "/a/my.project"),
         cmd("tmux", "attach", "-t", "my_project"),
@@ -38,7 +38,7 @@ def test_single_dir_in_tmux_switches():
         [],
         in_tmux=True,
         tmux_server_running=True,
-        existing=(),
+        existing={},
     ) == [
         cmd("zoxide", "add", "/a/proj"),
         cmd("tmux", "new-session", "-ds", "proj", "-c", "/a/proj"),
@@ -53,7 +53,7 @@ def test_single_file_opens_nvim():
         ["/a/b/file.py"],
         in_tmux=False,
         tmux_server_running=False,
-        existing=(),
+        existing={},
     ) == [
         cmd("zoxide", "add", "/a/b"),
         cmd("tmux", "new-session", "-ds", "b", "-c", "/a/b"),
@@ -68,7 +68,7 @@ def test_multi_dirs_attach_first():
         [],
         in_tmux=False,
         tmux_server_running=False,
-        existing=(),
+        existing={},
     ) == [
         cmd("zoxide", "add", "/a/one"),
         cmd("tmux", "new-session", "-ds", "one", "-c", "/a/one"),
@@ -84,7 +84,7 @@ def test_multi_dirs_in_tmux_choose_session():
         [],
         in_tmux=True,
         tmux_server_running=True,
-        existing=(),
+        existing={},
     )
     assert cmds[-2:] == [
         cmd("tmux", "choose-session"),
@@ -98,22 +98,111 @@ def test_multi_dirs_server_running_plain_attach():
         [],
         in_tmux=False,
         tmux_server_running=True,
-        existing=(),
+        existing={},
     )
     assert cmds[-1] == cmd("tmux", "attach")
 
 
-def test_duplicate_basenames_reuse_session():
+def test_duplicate_basenames_get_disambiguated():
     assert plan(
         ["/a/dup", "/b/dup"],
         [],
         in_tmux=False,
         tmux_server_running=False,
-        existing=(),
+        existing={},
     ) == [
         cmd("zoxide", "add", "/a/dup"),
         cmd("tmux", "new-session", "-ds", "dup", "-c", "/a/dup"),
         cmd("zoxide", "add", "/b/dup"),
+        cmd("tmux", "new-session", "-ds", "dup-2", "-c", "/b/dup"),
+        cmd("tmux", "attach", "-t", "dup"),
+    ]
+
+
+def test_existing_session_reused_when_same_path():
+    assert plan(
+        ["/a/dup"],
+        [],
+        in_tmux=False,
+        tmux_server_running=True,
+        existing={"dup": "/a/dup"},
+    ) == [
+        cmd("zoxide", "add", "/a/dup"),
+        cmd("tmux", "attach", "-t", "dup"),
+    ]
+
+
+def test_existing_session_of_other_path_creates_disambiguated():
+    assert plan(
+        ["/b/dup"],
+        [],
+        in_tmux=False,
+        tmux_server_running=False,
+        existing={"dup": "/a/dup"},
+    ) == [
+        cmd("zoxide", "add", "/b/dup"),
+        cmd("tmux", "new-session", "-ds", "dup-2", "-c", "/b/dup"),
+        cmd("tmux", "attach", "-t", "dup-2"),
+    ]
+
+
+def test_disambiguation_skips_taken_suffixes():
+    assert plan(
+        ["/d/dup"],
+        [],
+        in_tmux=False,
+        tmux_server_running=False,
+        existing={"dup": "/a/dup", "dup-2": "/c/dup"},
+    ) == [
+        cmd("zoxide", "add", "/d/dup"),
+        cmd("tmux", "new-session", "-ds", "dup-3", "-c", "/d/dup"),
+        cmd("tmux", "attach", "-t", "dup-3"),
+    ]
+
+
+def test_existing_session_reused_after_suffixed_creation():
+    assert plan(
+        ["/b/dup"],
+        [],
+        in_tmux=False,
+        tmux_server_running=True,
+        existing={"dup": "/a/dup", "dup-2": "/b/dup"},
+    ) == [
+        cmd("zoxide", "add", "/b/dup"),
+        cmd("tmux", "attach", "-t", "dup-2"),
+    ]
+
+
+def test_two_files_same_dir_share_session():
+    assert plan(
+        [],
+        ["/a/x.py", "/a/y.py"],
+        in_tmux=False,
+        tmux_server_running=False,
+        existing={},
+    ) == [
+        cmd("zoxide", "add", "/a"),
+        cmd("tmux", "new-session", "-ds", "a", "-c", "/a"),
+        cmd("tmux", "send-keys", "-t", "a", "nvim '/a/x.py'", "Enter"),
+        cmd("zoxide", "add", "/a"),
+        cmd("tmux", "send-keys", "-t", "a", "nvim '/a/y.py'", "Enter"),
+        cmd("tmux", "attach", "-t", "a"),
+    ]
+
+
+def test_file_dirname_collision_with_dir_disambiguated():
+    assert plan(
+        ["/a/dup"],
+        ["/x/dup/f.py"],
+        in_tmux=False,
+        tmux_server_running=False,
+        existing={},
+    ) == [
+        cmd("zoxide", "add", "/a/dup"),
+        cmd("tmux", "new-session", "-ds", "dup", "-c", "/a/dup"),
+        cmd("zoxide", "add", "/x/dup"),
+        cmd("tmux", "new-session", "-ds", "dup-2", "-c", "/x/dup"),
+        cmd("tmux", "send-keys", "-t", "dup-2", "nvim '/x/dup/f.py'", "Enter"),
         cmd("tmux", "attach", "-t", "dup"),
     ]
 
@@ -124,7 +213,7 @@ def test_mixed_dirs_then_files_processed_in_order():
         ["/b/two/file.py"],
         in_tmux=False,
         tmux_server_running=False,
-        existing=(),
+        existing={},
     ) == [
         cmd("zoxide", "add", "/a/one"),
         cmd("tmux", "new-session", "-ds", "one", "-c", "/a/one"),
@@ -141,7 +230,7 @@ def test_multi_files_first_session_from_dirname():
         ["/a/one/x.py", "/b/two/y.py"],
         in_tmux=False,
         tmux_server_running=False,
-        existing=(),
+        existing={},
     )
     assert cmds[-1] == cmd("tmux", "attach", "-t", "one")
 
@@ -153,7 +242,7 @@ def test_empty_plan():
             [],
             in_tmux=False,
             tmux_server_running=False,
-            existing=(),
+            existing={},
         )
         == []
     )

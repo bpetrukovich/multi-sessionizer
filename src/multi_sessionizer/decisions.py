@@ -9,14 +9,16 @@ mirroring the branching logic of the original bash script:
   ``choose-session`` (inside tmux) or a plain ``attach``.
 
 Directories are processed before files. Session creation decisions are made
-from a snapshot of already-existing sessions plus the sessions created earlier
-in the same plan (so duplicate basenames reuse one session).
+from a snapshot of already-existing sessions (a ``name -> path`` mapping) plus
+the sessions created earlier in the same plan. An existing session is reused
+only when it belongs to the same directory; otherwise the name is
+disambiguated with a numeric suffix (``dup``, ``dup-2``, ``dup-3``).
 """
 
 from __future__ import annotations
 
 import os
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 from .naming import session_name
@@ -31,17 +33,39 @@ class Command:
         return [self.program, *self.args]
 
 
+def _same_path(a: str, b: str) -> bool:
+    return os.path.realpath(a) == os.path.realpath(b)
+
+
+def _resolve_name(
+    base: str,
+    cwd: str,
+    existing: Mapping[str, str],
+    created: dict[str, str],
+) -> str:
+    name = base
+    index = 2
+    while name in existing or name in created:
+        if _same_path(existing.get(name, ""), cwd) or _same_path(created.get(name, ""), cwd):
+            return name
+        name = f"{base}-{index}"
+        index += 1
+    return name
+
+
 def _ensure_session(
     cmds: list[Command],
-    existing: set[str],
-    created: set[str],
-    name: str,
+    existing: Mapping[str, str],
+    created: dict[str, str],
+    base_name: str,
     cwd: str,
-) -> None:
+) -> str:
+    name = _resolve_name(base_name, cwd, existing, created)
     cmds.append(Command("zoxide", ("add", cwd)))
     if name not in existing and name not in created:
         cmds.append(Command("tmux", ("new-session", "-ds", name, "-c", cwd)))
-        created.add(name)
+        created[name] = cwd
+    return name
 
 
 def _attach_single(cmds: list[Command], in_tmux: bool, name: str) -> None:
@@ -67,51 +91,48 @@ def _post_step(
         cmds.append(Command("tmux", ("attach",)))
 
 
-def _first_name(dirs: Sequence[str], files: Sequence[str]) -> str:
-    if dirs:
-        return session_name(dirs[0])
-    return session_name(os.path.dirname(files[0]))
-
-
 def plan(
     dirs: Iterable[str],
     files: Iterable[str],
     *,
     in_tmux: bool,
     tmux_server_running: bool,
-    existing: Iterable[str] = (),
+    existing: Mapping[str, str] | None = None,
 ) -> list[Command]:
     dirs = list(dirs)
     files = list(files)
-    existing = set(existing)
-    created: set[str] = set()
+    existing = existing if existing is not None else {}
+    created: dict[str, str] = {}
     cmds: list[Command] = []
 
     if len(dirs) == 1 and not files:
-        name = session_name(dirs[0])
-        _ensure_session(cmds, existing, created, name, dirs[0])
+        name = _ensure_session(cmds, existing, created, session_name(dirs[0]), dirs[0])
         _attach_single(cmds, in_tmux, name)
         return cmds
 
     if len(files) == 1 and not dirs:
         filepath = files[0]
         dir_ = os.path.dirname(filepath)
-        name = session_name(dir_)
-        _ensure_session(cmds, existing, created, name, dir_)
+        name = _ensure_session(cmds, existing, created, session_name(dir_), dir_)
         cmds.append(Command("tmux", ("send-keys", "-t", name, f"nvim '{filepath}'", "Enter")))
         _attach_single(cmds, in_tmux, name)
         return cmds
 
+    first_name: str | None = None
     for dir_ in dirs:
-        _ensure_session(cmds, existing, created, session_name(dir_), dir_)
+        name = _ensure_session(cmds, existing, created, session_name(dir_), dir_)
+        if first_name is None:
+            first_name = name
 
     for filepath in files:
         dir_ = os.path.dirname(filepath)
-        name = session_name(dir_)
-        _ensure_session(cmds, existing, created, name, dir_)
+        name = _ensure_session(cmds, existing, created, session_name(dir_), dir_)
         cmds.append(Command("tmux", ("send-keys", "-t", name, f"nvim '{filepath}'", "Enter")))
+        if first_name is None:
+            first_name = name
 
     if cmds:
-        _post_step(cmds, in_tmux, tmux_server_running, _first_name(dirs, files))
+        assert first_name is not None
+        _post_step(cmds, in_tmux, tmux_server_running, first_name)
 
     return cmds

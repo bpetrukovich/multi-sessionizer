@@ -9,12 +9,13 @@ Python 3.12+ rewrite of the original bash script: configuration moved to a TOML 
 - **Interactive project picker** via fzf: the script collects a list of directories and files from configured locations, sorts them by frequency of use (via zoxide) and shows them in a convenient multi-select.
 - **Non-interactive launch**: pass directory and file paths as arguments directly — fzf is not invoked.
 - **Multiple sessions**: selecting several projects creates a separate tmux session for each one.
-- **Session auto-creation**: if a session with the required name already exists, it is reused instead of being recreated.
+- **Session auto-creation**: if a session with the required name already exists and belongs to the same directory, it is reused instead of being recreated.
 - **Editor launch**: when a file is selected, `nvim <file>` is automatically opened in the created session.
 - **Smart switching**: depending on the context, the script either attaches to the first session, calls `tmux choose-session` (when already inside tmux), or performs a plain `tmux attach`.
 - **zoxide statistics**: every opened directory is added to zoxide (`zoxide add`), and more frequently used projects appear higher in the picker.
 - **Configuration validation**: before an interactive run, the script verifies that all configured directories and files exist; otherwise it prints a list of problems.
 - **Dot-free session names**: dots in directory names are replaced with underscores (e.g. `my.project` → `my_project`).
+- **Collision-safe session names**: duplicate basenames never share a session — the second and later ones get a numeric suffix (`dup`, `dup-2`, `dup-3`); an existing session is reused only when it points at the same directory, so you never silently land in someone else's cwd.
 
 ## Dependencies
 
@@ -116,7 +117,7 @@ multi-sessionizer /path/to/project /path/to/file.py
 
 Behavior:
 
-- a path to a **directory** → tmux session named after its `basename` (dots replaced with `_`), with the folder itself as the working directory;
+- a path to a **directory** → tmux session named after its `basename` (dots replaced with `_`), with the folder itself as the working directory; if that name already belongs to a different directory, a numeric suffix is appended (`dup`, `dup-2`, …);
 - a path to a **file** → tmux session in the file's directory with `nvim <file>` running;
 - multiple paths → one session per path;
 - mixed paths → directories are processed first, then files;
