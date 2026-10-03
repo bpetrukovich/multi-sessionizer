@@ -7,7 +7,7 @@ Python 3.12+ rewrite of the original bash script: configuration moved to a TOML 
 ## Features
 
 - **Interactive project picker** via fzf: the script collects a list of directories and files from configured locations, sorts them by frequency of use (via zoxide) and shows them in a convenient multi-select.
-- **Non-interactive launch**: pass directory and file paths as arguments directly — fzf is not invoked.
+- **Non-interactive launch**: pass directory and file paths via the `switch` subcommand — fzf is not invoked.
 - **Multiple sessions**: selecting several projects creates a separate tmux session for each one.
 - **Session auto-creation**: if a session with the required name already exists and belongs to the same directory, it is reused instead of being recreated.
 - **Editor launch**: when a file is selected, `nvim <file>` is automatically opened in the created session.
@@ -104,16 +104,25 @@ The list contains:
 
 Directories are sorted by frequency of use (zoxide); files are simply appended to the end of the list.
 
-### Non-interactive mode (arguments)
+### Non-interactive mode (`switch`)
 
-Pass the paths as arguments — no interactive picker needed:
+Pass the paths via the `switch` subcommand — no interactive picker needed:
 
 ```bash
-multi-sessionizer /path/to/project
-multi-sessionizer /path/to/project1 /path/to/project2
-multi-sessionizer /path/to/file.md
-multi-sessionizer /path/to/project /path/to/file.py
+multi-sessionizer switch /path/to/project
+multi-sessionizer switch /path/to/project1 /path/to/project2
+multi-sessionizer switch /path/to/file.md
+multi-sessionizer switch /path/to/project /path/to/file.py
 ```
+
+Everything after `switch` is taken verbatim as paths, so a leading `-` is fine and no `--` separator is ever needed. `--help`/`--version` are top-level flags only:
+
+```bash
+multi-sessionizer --help
+multi-sessionizer --version
+```
+
+Exit codes: `0` — success (including `--help`/`--version`), `1` — a bad path or a configuration problem, `2` — an unknown command.
 
 Behavior:
 

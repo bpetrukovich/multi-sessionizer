@@ -5,13 +5,29 @@ from __future__ import annotations
 import os
 import sys
 from collections.abc import Sequence
+from importlib import metadata
 
+from . import __version__, decisions
 from . import config as config_mod
-from . import decisions
 from . import runner as runner_mod
 from .cli import classify_args
 from .discovery import collect_dirs, collect_files
 from .rank import build_picker_list, parse_zoxide_scores
+
+USAGE = """\
+usage: multi-sessionizer [-h] [--version] [switch PATH ...]
+
+Create and switch between tmux project sessions.
+
+With no arguments, opens the interactive fzf picker.
+
+subcommands:
+  switch PATH [PATH ...]   open the given directories/files non-interactively
+
+options:
+  -h, --help     show this help message and exit
+  --version      show program's version number and exit
+"""
 
 CONFIG_EXAMPLE = """\
 project_roots_depth_1 = ["$HOME"]
@@ -19,6 +35,27 @@ project_roots_depth_2 = ["$HOME/work"]
 additional_dirs = ["$HOME/Documents", "$HOME/Projects"]
 additional_files = ["$HOME/.bashrc"]
 """
+
+
+def _package_version() -> str:
+    try:
+        return metadata.version("multi-sessionizer")
+    except metadata.PackageNotFoundError:
+        return __version__
+
+
+def _split_argv(argv: Sequence[str]) -> tuple[str | None, list[str]]:
+    """Return (command, paths) based on the first token."""
+    if not argv:
+        return None, []
+    first = argv[0]
+    if first in ("-h", "--help"):
+        return "help", []
+    if first == "--version":
+        return "version", []
+    if first == "switch":
+        return "switch", list(argv[1:])
+    return "unknown", list(argv)
 
 
 def _config_not_found(path: object) -> int:
@@ -50,10 +87,24 @@ def _run(dirs: list[str], files: list[str]) -> int:
 
 def main(argv: Sequence[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    cmd, paths = _split_argv(argv)
 
-    if argv:
+    if cmd == "help":
+        print(USAGE, end="")
+        return 0
+
+    if cmd == "version":
+        print(f"multi-sessionizer {_package_version()}")
+        return 0
+
+    if cmd == "unknown":
+        print(f"multi-sessionizer: error: unknown command: {paths[0]}", file=sys.stderr)
+        print("Try 'multi-sessionizer --help' for more information.", file=sys.stderr)
+        return 2
+
+    if cmd == "switch":
         try:
-            dirs, files = classify_args(argv)
+            dirs, files = classify_args(paths)
         except ValueError as exc:
             print(str(exc), file=sys.stderr)
             return 1
