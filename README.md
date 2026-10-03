@@ -1,6 +1,8 @@
 # multi-sessionizer
 
-A script for quickly creating and switching between tmux project sessions. It lets you spin up working environments for multiple directories and files in a couple of keystrokes: each selected directory gets its own tmux session (created or reused), and each file gets a session with the nvim editor already open.
+A tool for quickly creating and switching between tmux project sessions. It lets you spin up working environments for multiple directories and files in a couple of keystrokes: each selected directory gets its own tmux session (created or reused), and each file gets a session with the nvim editor already open.
+
+Python 3.12+ rewrite of the original bash script: configuration moved to a TOML file, logic split into pure, unit-tested modules.
 
 ## Features
 
@@ -22,17 +24,62 @@ A script for quickly creating and switching between tmux project sessions. It le
 | [fzf](https://github.com/junegunn/fzf) | interactive picker (`--tmux` flag) | yes (for interactive mode) |
 | [nvim](https://github.com/neovim/neovim) | opening selected files | yes (if you pick files) |
 | [zoxide](https://github.com/ajeetdsouza/zoxide) | sorting projects by frequency of use | no (optional) |
-| `find`, `realpath`, `pgrep`, `basename`, `dirname` | coreutils utilities | yes |
+| [uv](https://github.com/astral-sh/uv) | installation and running | for installation only |
 
 If `zoxide` is missing, the script keeps working: all directories get a zero "weight" and the ordering follows the order of the list.
 
 ## Installation
 
-Copy the script into a directory from `$PATH` and make it executable:
+Install the console script into your `~/.local/bin` (uses a dedicated uv-managed environment):
 
 ```bash
-cp multi-sessionizer ~/.local/bin/
-chmod +x ~/.local/bin/multi-sessionizer
+cd multi-sessionizer-project
+uv tool install .
+```
+
+Alternatively, run it straight from the project without installing:
+
+```bash
+uv run multi-sessionizer
+```
+
+or create a symlink to the project's console script:
+
+```bash
+ln -s "$(pwd)/.venv/bin/multi-sessionizer" ~/.local/bin/
+```
+
+## Configuration
+
+Configuration lives in `~/.config/multi-sessionizer/config.toml` (override the path with the `MULTI_SESSIONIZER_CONFIG` environment variable). **The file is required** — there are no built-in defaults; you are expected to write your own. Every key is optional, and a missing key simply means an empty list. Environment variables (`$HOME`, ...) and `~` are expanded in all paths.
+
+| Key | What it adds to the list |
+|---|---|
+| `project_roots_depth_1` | project roots searched 1 level deep: their direct subdirectories become entries |
+| `project_roots_depth_2` | project roots searched 2 levels deep: subdirectories and their direct children become entries |
+| `additional_dirs` | directories added to the list directly |
+| `additional_files` | files added to the list directly |
+
+Hidden directories (starting with `.`, e.g. `.git`, `.config`) are listed in the picker like any other directory.
+
+```toml
+project_roots_depth_1 = [
+    "$HOME/personal",
+]
+
+project_roots_depth_2 = [
+    "$HOME/work",
+]
+
+additional_dirs = [
+    "$HOME/obsidian-vault",
+    "$HOME/.config/nvim",
+]
+
+additional_files = [
+    "$HOME/.config/fish/config.fish",
+    "$HOME/.tmux.conf",
+]
 ```
 
 ## Usage
@@ -49,10 +96,10 @@ An fzf picker opens (in tmux mode) with the `Project > ` prompt. You can mark se
 
 The list contains:
 
-- all top-level directories inside `project_dirs_depth_1`;
-- all directories up to the second level inside `project_dirs_depth_2`;
-- the directories from `extra_dirs`;
-- the files from `files`.
+- all top-level directories inside `project_roots_depth_1`;
+- all directories up to the second level inside `project_roots_depth_2`;
+- the directories from `additional_dirs`;
+- the files from `additional_files`.
 
 Directories are sorted by frequency of use (zoxide); files are simply appended to the end of the list.
 
@@ -92,37 +139,58 @@ If exactly one project was selected:
 
 If you opened the picker but closed it without selecting anything (`Esc`) — the script simply exits.
 
-## Configuration
+## Development
 
-All project sources are defined at the top of the file in four arrays:
-
-| Variable | What it adds to the list |
-|---|---|
-| `project_dirs_depth_1` | recursion depth 1: direct subdirectories of the listed directories |
-| `project_dirs_depth_2` | recursion depth 2: subdirectories and their direct children |
-| `extra_dirs` | directories added to the list directly |
-| `files` | files added to the list directly |
-
-Hidden directories (starting with `.`) are excluded from the search (`-not -path '*/.*'`).
-
-Example configuration:
+The project uses [uv](https://github.com/astral-sh/uv), [pytest](https://pytest.org) and [ruff](https://github.com/astral-sh/ruff).
 
 ```bash
-project_dirs_depth_1=(
-  "$HOME/personal"
-)
-
-project_dirs_depth_2=(
-  "$HOME/work"
-)
-
-extra_dirs=(
-  "$HOME/obsidian-vault"
-  "$HOME/.config/nvim"
-)
-
-files=(
-  "$HOME/.config/fish/config.fish"
-  "$HOME/.tmux.conf"
-)
+uv sync                # create the environment
+uv run pytest          # run the test suite
+uv run ruff check .    # lint
+uv run ruff format .   # format
 ```
+
+The code is split into pure, unit-tested modules:
+
+| Module | Responsibility |
+|---|---|
+| `config.py` | TOML config loading, defaults, existence validation |
+| `discovery.py` | directory/file collection (depth 1/2, pruned traversal) |
+| `rank.py` | zoxide score parsing and ranking |
+| `naming.py` | session name generation |
+| `cli.py` | argument classification |
+| `decisions.py` | pure planning of the tmux/zoxide command sequence |
+| `runner.py` | thin subprocess wrapper around tmux/fzf/zoxide/pgrep |
+| `main.py` | wiring and the entry point |
+
+### Reinstalling into PATH
+
+After changing the source, rebuild and reinstall the console script:
+
+```bash
+./scripts/install.sh
+```
+
+This builds a fresh wheel and force-installs it. Note that `uv tool upgrade` is
+not enough for a local-path install: with an unchanged version it reuses a
+stale cached wheel and the installed binary keeps the old code.
+
+### Performance
+
+Directory discovery is guaranteed to touch only the configured levels, never
+the whole tree — enforced by the `test_scan_cost_is_bounded_by_max_depth` test
+(a regression to a full-tree walk fails it deterministically). For a live
+measurement against your real config:
+
+```bash
+uv run scripts/benchmark.py
+```
+
+## Differences from the original bash version
+
+- **Configuration** moved from hardcoded arrays at the top of the script into `~/.config/multi-sessionizer/config.toml` and is now **required**: the personal defaults were removed, so the tool refuses to start without a config file (printing an example skeleton). The non-interactive mode works without a config.
+- **zoxide sorting fixed**: the bash version called `zoxide query -l` without `--score`, so the score parsing was a silent no-op and the list was never actually sorted by frequency. The Python version uses `zoxide query -l -s` and sorts correctly.
+- **Mixed dir + file selections**: the bash version processed a single directory and then exited early, silently skipping any files passed alongside it. The Python version processes all selected paths.
+- **Hidden directories are listed**: the bash version excluded directories with a hidden component (`.git`, `.config`, ...) and, as a side effect, silently ignored whole project roots whose own path contained a dot (e.g. `$HOME/.config/nvim`). The Python version lists hidden directories like any other and honors every configured root.
+- **Faster discovery**: the bash version used `find -maxdepth`, the Python version prunes the traversal at the configured depth too, so deep trees are never walked.
+- **Session existence check**: instead of one `tmux has-session` call per path, the existing sessions are queried once with `tmux list-sessions`.

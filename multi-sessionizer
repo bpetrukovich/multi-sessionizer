@@ -25,6 +25,7 @@ extra_dirs=(
   "$HOME/buffer"
   "$HOME"
   "/mnt/c/Users/b.petrukovich/.config/wezterm"
+  "$HOME/.local/scripts/multi-sessionizer-project/"
 )
 
 files=(
