@@ -19,4 +19,4 @@ class Config:
     project_roots_depth_1: tuple[str, ...] = ()
     project_roots_depth_2: tuple[str, ...] = ()
     additional_dirs: tuple[str, ...] = ()
-    additional_files: tuple[str, ...] = ()
+    tmuxp_workspaces: tuple[str, ...] = ()

@@ -1,6 +1,6 @@
 """MessageOutput adapter: all user-facing stderr/stdout text (research R7).
 
-Prints the exact pre-refactor text so the app flow never prints directly.
+Prints the exact text so the app flow never prints directly.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ CONFIG_EXAMPLE = """\
 project_roots_depth_1 = ["$HOME"]
 project_roots_depth_2 = ["$HOME/work"]
 additional_dirs = ["$HOME/Documents", "$HOME/Projects"]
-additional_files = ["$HOME/.bashrc"]
+tmuxp_workspaces = ["session_name: \"project\"\nwindows:\n  - shell_command: \"vim\"\n"]
 """
 
 
@@ -26,15 +26,15 @@ class ConsoleMessageOutput:
             file=sys.stderr,
         )
 
-    def missing_paths(self, missing_files: list[str], missing_dirs: list[str]) -> None:
-        if missing_files:
-            print("The following files do not exist:", file=sys.stderr)
-            for path in missing_files:
-                print(f"  {path}", file=sys.stderr)
+    def missing_dirs(self, missing_dirs: list[str]) -> None:
         if missing_dirs:
             print("The following directories do not exist:", file=sys.stderr)
             for path in missing_dirs:
                 print(f"  {path}", file=sys.stderr)
+
+    def workspace_problems(self, problems: list[str]) -> None:
+        for problem in problems:
+            print(problem, file=sys.stderr)
 
     def error(self, msg: str) -> None:
         print(msg, file=sys.stderr)

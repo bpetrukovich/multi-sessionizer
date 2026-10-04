@@ -25,6 +25,19 @@ Rules:
 - `zoxide add` and `tmux` commands that the tool runs have real side effects;
   add `--zoxide-isolated` to the sandbox wrapper to sandbox zoxide too.
 
+## No backward compatibility
+
+This project does NOT keep backward compatibility, and breaking changes are
+welcome. When a command, config key, or surface changes or is removed:
+
+- remove the old surface outright — do NOT keep it working;
+- do NOT add migration hints, deprecation warnings, "no longer supported"
+  guidance, or compatibility shims to code, messages, or docs;
+- just implement the new behavior and document it.
+
+Simplicity wins over compatibility. Never add a special case just to spare an
+old config or an old CLI invocation.
+
 ## Test & quality commands
 
 `uv run pytest` may fail to spawn pytest (permission denied) — use:

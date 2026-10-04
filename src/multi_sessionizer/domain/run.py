@@ -12,6 +12,12 @@ from .models import CommandPlan, RuntimeSnapshot, Selection
 from .plan import plan
 
 
+class ProvisioningError(RuntimeError):
+    """Raised by a :class:`CommandExecutor` when a session cannot be
+    provisioned — e.g. the required external tool is missing or a build
+    fails (FR-020, research R9)."""
+
+
 class CommandExecutor(Protocol):
     def execute(self, cmds: CommandPlan) -> None: ...
 

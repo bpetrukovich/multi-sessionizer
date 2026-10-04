@@ -1,8 +1,8 @@
 """Entry point: infrastructure CLI dispatch + composition root.
 
-``main`` handles help/version/unknown output and the switch branch (classifying
-via the classifier), then delegates to the app flows with a real ``FlowDeps``
-built by ``default_deps``. ``_run`` and ``_split_argv`` keep their signatures so
+``main`` handles help/version/unknown output and dispatches to the app flows
+(``switch_flow``, ``session_flow``, ``interactive_flow``) with a real
+``FlowDeps`` built by ``default_deps``. ``_split_argv`` keeps its signature so
 ``test_main.py`` monkeypatching works unchanged.
 """
 
@@ -13,9 +13,8 @@ from collections.abc import Sequence
 from importlib import metadata
 
 from . import __version__
-from .app.flows import interactive_flow, run_selection
+from .app.flows import interactive_flow, session_flow, switch_flow
 from .app.ports import FlowDeps
-from .domain.models import Selection
 from .infrastructure.classifier import PathSelectionClassifier
 from .infrastructure.config_loader import FileConfigLoader
 from .infrastructure.discovery import FileCandidateDiscovery
@@ -26,14 +25,15 @@ from .infrastructure.messages import (
 from .infrastructure.runner import Runner
 
 USAGE = """\
-usage: multi-sessionizer [-h] [--version] [switch PATH ...]
+usage: multi-sessionizer [-h] [--version] [switch PATH ...] [session YAML ...]
 
 Create and switch between tmux project sessions.
 
 With no arguments, opens the interactive fzf picker.
 
 subcommands:
-  switch PATH [PATH ...]   open the given directories/files non-interactively
+  switch PATH [PATH ...]   open the given directories non-interactively
+  session YAML [YAML ...]  provision the given inline tmuxp workspaces
 
 options:
   -h, --help     show this help message and exit
@@ -59,6 +59,8 @@ def _split_argv(argv: Sequence[str]) -> tuple[str | None, list[str]]:
         return "version", []
     if first == "switch":
         return "switch", list(argv[1:])
+    if first == "session":
+        return "session", list(argv[1:])
     return "unknown", list(argv)
 
 
@@ -75,11 +77,6 @@ def default_deps() -> FlowDeps:
         executor=runner,
         messages=ConsoleMessageOutput(),
     )
-
-
-def _run(dirs: list[str], files: list[str]) -> int:
-    selection = Selection(tuple(dirs), tuple(files))
-    return run_selection(selection, default_deps())
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -100,12 +97,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     if cmd == "switch":
-        deps = default_deps()
-        try:
-            dirs, files = deps.classifier.classify_args(paths)
-        except ValueError as exc:
-            deps.messages.error(str(exc))
-            return 1
-        return _run(dirs, files)
+        return switch_flow(paths, default_deps())
+
+    if cmd == "session":
+        return session_flow(paths, default_deps())
 
     return interactive_flow(default_deps())

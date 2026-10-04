@@ -43,40 +43,66 @@ def test_short_help_exits_zero(capsys):
 def test_version_exits_zero(capsys):
     assert main.main(["--version"]) == 0
     out = capsys.readouterr().out
-    assert "multi-sessionizer 0.1.1" in out
+    assert "multi-sessionizer 0.2.0" in out
 
 
 def test_unknown_command(monkeypatch, capsys):
     def fail(*_args):
-        raise AssertionError("_run should not be called")
+        raise AssertionError("switch_flow should not be called")
 
-    monkeypatch.setattr(main, "_run", fail)
+    monkeypatch.setattr(main, "switch_flow", fail)
     assert main.main(["bogus"]) == 2
     err = capsys.readouterr().err
     assert "unknown command: bogus" in err
     assert "--help" in err
 
 
-def test_switch_runs_with_paths(tmp_path, monkeypatch):
-    d = tmp_path / "-foo"
-    d.mkdir()
+def test_switch_dispatches_to_switch_flow(monkeypatch):
     captured = {}
 
-    def fake_run(dirs, files):
-        captured["dirs"] = dirs
-        captured["files"] = files
+    def fake_switch_flow(paths, deps):
+        captured["paths"] = paths
         return 0
 
-    monkeypatch.setattr(main, "_run", fake_run)
-    assert main.main(["switch", str(d)]) == 0
-    assert captured["dirs"] == [str(d)]
-    assert captured["files"] == []
+    monkeypatch.setattr(main, "switch_flow", fake_switch_flow)
+    assert main.main(["switch", "-foo"]) == 0
+    assert captured["paths"] == ["-foo"]
 
 
-def test_switch_bad_path(monkeypatch, capsys):
-    def fail(*_args):
-        raise AssertionError("_run should not be called")
-
-    monkeypatch.setattr(main, "_run", fail)
+def test_switch_bad_path(capsys):
     assert main.main(["switch", "/nonexistent/xyz"]) == 1
     assert "Not a directory or file" in capsys.readouterr().err
+
+
+def test_split_session():
+    assert main._split_argv(["session", "<yaml>", "<yaml>"]) == ("session", ["<yaml>", "<yaml>"])
+
+
+def test_session_runs_flow(monkeypatch):
+    captured = {}
+
+    def fake_session_flow(paths, deps):
+        captured["paths"] = paths
+        return 0
+
+    monkeypatch.setattr(main, "session_flow", fake_session_flow)
+    assert main.main(["session", "windows: []"]) == 0
+    assert captured["paths"] == ["windows: []"]
+
+
+def test_session_takes_everything_after_verbatim(monkeypatch):
+    captured = {}
+
+    def fake_session_flow(paths, deps):
+        captured["paths"] = paths
+        return 0
+
+    monkeypatch.setattr(main, "session_flow", fake_session_flow)
+    assert main.main(["session", "--leading", "-dash", "a: b"]) == 0
+    assert captured["paths"] == ["--leading", "-dash", "a: b"]
+
+
+def test_help_shows_session_subcommand(capsys):
+    assert main.main(["--help"]) == 0
+    out = capsys.readouterr().out
+    assert "session" in out

@@ -1,10 +1,10 @@
-"""CandidateDiscovery adapter: collect directories and files from the roots.
+"""CandidateDiscovery adapter: collect directories from the roots.
 
 Replicates the ``find`` invocations of the original bash script:
 
 - ``project_roots_depth_1``: direct subdirectories of each root;
 - ``project_roots_depth_2``: subdirectories and their direct children;
-- ``additional_dirs`` and ``additional_files`` are added verbatim.
+- ``additional_dirs`` are added verbatim.
 
 The traversal is pruned at the configured depth (like ``find -maxdepth``), so
 deep trees are never walked (constitution IV). Hidden directories (``.git``,
@@ -58,15 +58,8 @@ def collect_dirs(cfg: Config) -> list[str]:
     return dirs
 
 
-def collect_files(cfg: Config) -> list[str]:
-    return list(cfg.additional_files)
-
-
 class FileCandidateDiscovery:
     """Object adapter satisfying the app ``CandidateDiscovery`` port."""
 
     def collect_dirs(self, cfg: Config) -> list[str]:
         return collect_dirs(cfg)
-
-    def collect_files(self, cfg: Config) -> list[str]:
-        return collect_files(cfg)

@@ -7,6 +7,6 @@ from __future__ import annotations
 
 import os
 
-from .infrastructure.discovery import collect_dirs, collect_files
+from .infrastructure.discovery import collect_dirs
 
-__all__ = ["collect_dirs", "collect_files", "os"]
+__all__ = ["collect_dirs", "os"]

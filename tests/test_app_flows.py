@@ -1,4 +1,4 @@
-"""App wiring tests with fake adapters (FR-020, US3/US4).
+"""App wiring tests with fake adapters (FR-018/FR-020, US1/US3/US4).
 
 Injects fake adapters into ``FlowDeps`` and asserts the wiring sequence with no
 real subprocess/filesystem/environment/terminal side effects.
@@ -10,20 +10,24 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from multi_sessionizer.app.configuration import Config, ConfigNotFoundError
-from multi_sessionizer.app.flows import interactive_flow, run_selection, switch_flow
+from multi_sessionizer.app.flows import interactive_flow, run_selection, session_flow, switch_flow
 from multi_sessionizer.app.ports import FlowDeps
 from multi_sessionizer.domain.models import Command, CommandPlan, RuntimeSnapshot, Selection
+from multi_sessionizer.domain.workspace import fingerprint
+
+WS_DEF = "session_name: myws\nwindows:\n  - shell_command: vim\n"
+BAD_WS = "windows: []\n"
 
 
-def cmd(program, *args):
-    return Command(program, args)
+def cmd(program, *args, input=None):
+    return Command(program, args, input=input)
 
 
 class FakeConfigLoader:
-    def __init__(self):
+    def __init__(self, cfg=None):
         self.calls: list[str] = []
-        self.cfg = Config()
-        self.missing = ([], [])
+        self.cfg = cfg if cfg is not None else Config()
+        self.missing = []
         self.not_found: ConfigNotFoundError | None = None
 
     def load(self) -> Config:
@@ -32,28 +36,19 @@ class FakeConfigLoader:
             raise self.not_found
         return self.cfg
 
-    def missing_files(self, cfg):
-        self.calls.append("missing_files")
-        return self.missing[0]
-
     def missing_dirs(self, cfg):
         self.calls.append("missing_dirs")
-        return self.missing[1]
+        return self.missing
 
 
 class FakeDiscovery:
-    def __init__(self, dirs=(), files=()):
+    def __init__(self, dirs=()):
         self.calls: list[str] = []
         self.dirs = list(dirs)
-        self.files = list(files)
 
     def collect_dirs(self, cfg):
         self.calls.append("collect_dirs")
         return self.dirs
-
-    def collect_files(self, cfg):
-        self.calls.append("collect_files")
-        return self.files
 
 
 class FakeScorer:
@@ -118,18 +113,21 @@ class FakeMessages:
     def __init__(self):
         self.calls: list[str] = []
         self.config_path = None
-        self.missing_files = []
-        self.missing_dirs = []
+        self.missing = []
+        self.problems = []
         self.errors = []
 
     def config_not_found(self, path: object) -> None:
         self.calls.append("config_not_found")
         self.config_path = path
 
-    def missing_paths(self, missing_files, missing_dirs) -> None:
-        self.calls.append("missing_paths")
-        self.missing_files = missing_files
-        self.missing_dirs = missing_dirs
+    def missing_dirs(self, missing_dirs: list[str]) -> None:
+        self.calls.append("missing_dirs")
+        self.missing = missing_dirs
+
+    def workspace_problems(self, problems: list[str]) -> None:
+        self.calls.append("workspace_problems")
+        self.problems = problems
 
     def error(self, msg: str) -> None:
         self.calls.append("error")
@@ -158,7 +156,7 @@ def test_interactive_flow_calls_sequence():
     )
     deps = make_deps(
         config_loader=FakeConfigLoader(),
-        discovery=FakeDiscovery(dirs=["/a/one"], files=["/f"]),
+        discovery=FakeDiscovery(dirs=["/a/one"]),
         scorer=FakeScorer("10.0 /a/one\n"),
         picker=FakePicker(selected=["/a/one"]),
         classifier=FakeClassifier(selection=Selection(("/a/one",), ())),
@@ -166,15 +164,15 @@ def test_interactive_flow_calls_sequence():
         executor=FakeExecutor(),
     )
     assert interactive_flow(deps) == 0
-    assert deps.config_loader.calls == ["load", "missing_files", "missing_dirs"]
-    assert deps.discovery.calls == ["collect_dirs", "collect_files"]
+    assert deps.config_loader.calls == ["load", "missing_dirs"]
+    assert deps.discovery.calls == ["collect_dirs"]
     assert deps.scorer.calls == ["scores"]
     assert deps.picker.calls == ["pick"]
     assert deps.classifier.calls == ["classify_selection"]
     assert deps.probe.calls == ["snapshot"]
     assert deps.executor.calls == ["execute"]
     assert deps.executor.plans == [plan]
-    assert deps.picker.items == ["/a/one", "/f"]
+    assert deps.picker.items == ["/a/one"]
 
 
 def test_switch_flow_uses_classifier_probe_executor():
@@ -194,6 +192,23 @@ def test_switch_flow_uses_classifier_probe_executor():
     assert deps.probe.calls == ["snapshot"]
     assert deps.executor.calls == ["execute"]
     assert deps.executor.plans == [plan]
+
+
+def test_switch_flow_bad_path_reports_error_and_returns_1():
+    class RaisingClassifier:
+        def classify_args(self, argv: Sequence[str]):
+            raise ValueError("Not a directory or file: /nope")
+
+    deps = make_deps(
+        classifier=RaisingClassifier(),
+        probe=FakeProbe(),
+        executor=FakeExecutor(),
+        messages=FakeMessages(),
+    )
+    assert switch_flow(["/nope"], deps) == 1
+    assert deps.messages.errors == ["Not a directory or file: /nope"]
+    assert deps.probe.calls == []
+    assert deps.executor.calls == []
 
 
 def test_run_selection_produces_expected_plan_no_subprocess():
@@ -222,21 +237,94 @@ def test_config_not_found_returns_one():
     assert messages.config_path is loader.not_found
 
 
-def test_missing_paths_returns_one():
+def test_missing_dirs_returns_one():
     loader = FakeConfigLoader()
-    loader.missing = (["/nofile"], ["/nodir"])
+    loader.missing = ["/nodir"]
     messages = FakeMessages()
     deps = make_deps(config_loader=loader, messages=messages)
     assert interactive_flow(deps) == 1
-    assert messages.calls == ["missing_paths"]
-    assert messages.missing_files == ["/nofile"]
-    assert messages.missing_dirs == ["/nodir"]
+    assert messages.calls == ["missing_dirs"]
+    assert messages.missing == ["/nodir"]
 
 
 def test_empty_picker_selection_returns_zero_executor_not_called():
     deps = make_deps(picker=FakePicker(selected=[]), executor=FakeExecutor())
     assert interactive_flow(deps) == 0
     assert deps.executor.calls == []
+
+
+def test_interactive_flow_validates_workspaces_before_picker():
+    loader = FakeConfigLoader(cfg=Config(tmuxp_workspaces=(BAD_WS,)))
+    messages = FakeMessages()
+    executor = FakeExecutor()
+    deps = make_deps(config_loader=loader, messages=messages, executor=executor)
+    assert interactive_flow(deps) == 1
+    assert messages.calls == ["workspace_problems"]
+    assert "windows" in " ".join(messages.problems)
+    assert executor.calls == []
+    assert deps.picker.calls == []
+
+
+def test_interactive_flow_lists_workspace_labels_and_builds_selection():
+    loader = FakeConfigLoader(cfg=Config(tmuxp_workspaces=(WS_DEF,)))
+    executor = FakeExecutor()
+    deps = make_deps(
+        config_loader=loader,
+        picker=FakePicker(selected=["[tmuxp] myws"]),
+        probe=FakeProbe(snapshot=RuntimeSnapshot(False, False, {})),
+        executor=executor,
+    )
+    assert interactive_flow(deps) == 0
+    assert deps.picker.items == ["[tmuxp] myws"]
+    assert deps.classifier.calls == ["classify_selection"]
+    assert executor.plans == [
+        CommandPlan(
+            [
+                cmd("tmuxp", "load", "-d", "--no-progress", "-s", "myws", input=WS_DEF),
+                cmd(
+                    "tmux",
+                    "set-option",
+                    "-t",
+                    "myws",
+                    "@multi-sessionizer-marker",
+                    fingerprint(WS_DEF),
+                ),
+                cmd("tmux", "attach", "-t", "myws"),
+            ]
+        )
+    ]
+
+
+def test_interactive_flow_splits_workspace_labels_from_dir_lines():
+    loader = FakeConfigLoader(cfg=Config(tmuxp_workspaces=(WS_DEF,)))
+    executor = FakeExecutor()
+    deps = make_deps(
+        config_loader=loader,
+        discovery=FakeDiscovery(dirs=["/a/one"]),
+        picker=FakePicker(selected=["/a/one", "[tmuxp] myws"]),
+        classifier=FakeClassifier(selection=Selection(("/a/one",), ())),
+        probe=FakeProbe(snapshot=RuntimeSnapshot(False, False, {})),
+        executor=executor,
+    )
+    assert interactive_flow(deps) == 0
+    assert executor.plans == [
+        CommandPlan(
+            [
+                cmd("zoxide", "add", "/a/one"),
+                cmd("tmux", "new-session", "-ds", "one", "-c", "/a/one"),
+                cmd("tmuxp", "load", "-d", "--no-progress", "-s", "myws", input=WS_DEF),
+                cmd(
+                    "tmux",
+                    "set-option",
+                    "-t",
+                    "myws",
+                    "@multi-sessionizer-marker",
+                    fingerprint(WS_DEF),
+                ),
+                cmd("tmux", "attach", "-t", "one"),
+            ]
+        )
+    ]
 
 
 def test_full_wiring_replaceable_executor(monkeypatch, tmp_path):
@@ -294,3 +382,67 @@ def test_full_wiring_run_selection_with_real_classifier(monkeypatch, tmp_path):
             ]
         )
     ]
+
+
+def test_session_flow_valid_workspace_provisions():
+    executor = FakeExecutor()
+    deps = make_deps(
+        probe=FakeProbe(snapshot=RuntimeSnapshot(False, False, {})),
+        executor=executor,
+    )
+    assert session_flow([WS_DEF], deps) == 0
+    assert executor.plans == [
+        CommandPlan(
+            [
+                cmd("tmuxp", "load", "-d", "--no-progress", "-s", "myws", input=WS_DEF),
+                cmd(
+                    "tmux",
+                    "set-option",
+                    "-t",
+                    "myws",
+                    "@multi-sessionizer-marker",
+                    fingerprint(WS_DEF),
+                ),
+                cmd("tmux", "attach", "-t", "myws"),
+            ]
+        )
+    ]
+
+
+def test_session_flow_invalid_workspace_reports_and_skips_execution():
+    messages = FakeMessages()
+    executor = FakeExecutor()
+    deps = make_deps(messages=messages, executor=executor)
+    assert session_flow([BAD_WS], deps) == 1
+    assert messages.calls == ["workspace_problems"]
+    assert "windows" in " ".join(messages.problems)
+    assert executor.calls == []
+    assert deps.probe.calls == []
+
+
+def test_session_flow_multiple_workspaces_validate_all():
+    messages = FakeMessages()
+    deps = make_deps(messages=messages, executor=FakeExecutor())
+    assert session_flow([WS_DEF, BAD_WS], deps) == 1
+    assert messages.calls == ["workspace_problems"]
+    assert len(messages.problems) >= 1
+
+
+def test_run_selection_reports_provisioning_error():
+    class BoomExecutor:
+        def execute(self, cmds: CommandPlan) -> None:
+            raise ProvisioningError(
+                "tmuxp is required for workspace sessions but was not found on PATH."
+            )
+
+    from multi_sessionizer.domain.run import ProvisioningError
+
+    messages = FakeMessages()
+    deps = make_deps(
+        probe=FakeProbe(snapshot=RuntimeSnapshot(False, False, {})),
+        executor=BoomExecutor(),
+        messages=messages,
+    )
+    assert run_selection(Selection((), (WS_DEF,)), deps) == 1
+    assert messages.calls == ["error"]
+    assert "tmuxp is required" in messages.errors[0]

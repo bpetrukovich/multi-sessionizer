@@ -47,21 +47,6 @@ def test_single_dir_in_tmux_switches():
     ]
 
 
-def test_single_file_opens_nvim():
-    assert plan(
-        [],
-        ["/a/b/file.py"],
-        in_tmux=False,
-        tmux_server_running=False,
-        existing={},
-    ) == [
-        cmd("zoxide", "add", "/a/b"),
-        cmd("tmux", "new-session", "-ds", "b", "-c", "/a/b"),
-        cmd("tmux", "send-keys", "-t", "b", "nvim '/a/b/file.py'", "Enter"),
-        cmd("tmux", "attach", "-t", "b"),
-    ]
-
-
 def test_multi_dirs_attach_first():
     assert plan(
         ["/a/one", "/b/two"],
@@ -171,68 +156,6 @@ def test_existing_session_reused_after_suffixed_creation():
         cmd("zoxide", "add", "/b/dup"),
         cmd("tmux", "attach", "-t", "dup-2"),
     ]
-
-
-def test_two_files_same_dir_share_session():
-    assert plan(
-        [],
-        ["/a/x.py", "/a/y.py"],
-        in_tmux=False,
-        tmux_server_running=False,
-        existing={},
-    ) == [
-        cmd("zoxide", "add", "/a"),
-        cmd("tmux", "new-session", "-ds", "a", "-c", "/a"),
-        cmd("tmux", "send-keys", "-t", "a", "nvim '/a/x.py'", "Enter"),
-        cmd("zoxide", "add", "/a"),
-        cmd("tmux", "send-keys", "-t", "a", "nvim '/a/y.py'", "Enter"),
-        cmd("tmux", "attach", "-t", "a"),
-    ]
-
-
-def test_file_dirname_collision_with_dir_disambiguated():
-    assert plan(
-        ["/a/dup"],
-        ["/x/dup/f.py"],
-        in_tmux=False,
-        tmux_server_running=False,
-        existing={},
-    ) == [
-        cmd("zoxide", "add", "/a/dup"),
-        cmd("tmux", "new-session", "-ds", "dup", "-c", "/a/dup"),
-        cmd("zoxide", "add", "/x/dup"),
-        cmd("tmux", "new-session", "-ds", "dup-2", "-c", "/x/dup"),
-        cmd("tmux", "send-keys", "-t", "dup-2", "nvim '/x/dup/f.py'", "Enter"),
-        cmd("tmux", "attach", "-t", "dup"),
-    ]
-
-
-def test_mixed_dirs_then_files_processed_in_order():
-    assert plan(
-        ["/a/one"],
-        ["/b/two/file.py"],
-        in_tmux=False,
-        tmux_server_running=False,
-        existing={},
-    ) == [
-        cmd("zoxide", "add", "/a/one"),
-        cmd("tmux", "new-session", "-ds", "one", "-c", "/a/one"),
-        cmd("zoxide", "add", "/b/two"),
-        cmd("tmux", "new-session", "-ds", "two", "-c", "/b/two"),
-        cmd("tmux", "send-keys", "-t", "two", "nvim '/b/two/file.py'", "Enter"),
-        cmd("tmux", "attach", "-t", "one"),
-    ]
-
-
-def test_multi_files_first_session_from_dirname():
-    cmds = plan(
-        [],
-        ["/a/one/x.py", "/b/two/y.py"],
-        in_tmux=False,
-        tmux_server_running=False,
-        existing={},
-    )
-    assert cmds[-1] == cmd("tmux", "attach", "-t", "one")
 
 
 def test_empty_plan():

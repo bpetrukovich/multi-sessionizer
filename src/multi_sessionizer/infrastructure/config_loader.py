@@ -23,7 +23,7 @@ _FIELDS = (
     "project_roots_depth_1",
     "project_roots_depth_2",
     "additional_dirs",
-    "additional_files",
+    "tmuxp_workspaces",
 )
 
 
@@ -57,12 +57,11 @@ def load_config(path: str | Path | None = None) -> Config:
     values: dict[str, tuple[str, ...]] = {}
     for field in _FIELDS:
         raw = data.get(field)
-        values[field] = _expand_tuple(_as_tuple(raw))
+        if field == "tmuxp_workspaces":
+            values[field] = _as_tuple(raw)
+        else:
+            values[field] = _expand_tuple(_as_tuple(raw))
     return Config(**values)
-
-
-def missing_files(cfg: Config) -> list[str]:
-    return [p for p in cfg.additional_files if not os.path.exists(p)]
 
 
 def missing_dirs(cfg: Config) -> list[str]:
@@ -75,9 +74,6 @@ class FileConfigLoader:
 
     def load(self) -> Config:
         return load_config()
-
-    def missing_files(self, cfg: Config) -> list[str]:
-        return missing_files(cfg)
 
     def missing_dirs(self, cfg: Config) -> list[str]:
         return missing_dirs(cfg)

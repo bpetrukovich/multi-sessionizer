@@ -17,13 +17,13 @@ from the terminal.
 
 Behavior MUST live in small, single-responsibility, pure modules that are
 unit-tested before integration. Pure business logic lives in the `domain`
-layer (`naming`, `rank`, `plan`, `run`) and MUST stay free of direct side
-effects. The `app` layer is a thin wiring layer that owns the configuration
-DTO and the adapter contracts and contains no business rules. All side
-effects (subprocess, filesystem, environment, stdin/stdout, terminal) live in
-the `infrastructure` layer. External tools (tmux, fzf, zoxide, pgrep) MUST be
-invoked only through infrastructure adapters. A behavior change MUST come
-with tests written first (Red-Green-Refactor).
+layer (`naming`, `rank`, `plan`, `run`, `workspace`) and MUST stay free of
+direct side effects. The `app` layer is a thin wiring layer that owns the
+configuration DTO and the adapter contracts and contains no business rules.
+All side effects (subprocess, filesystem, environment, stdin/stdout, terminal)
+live in the `infrastructure` layer. External tools (tmux, fzf, zoxide, pgrep,
+tmuxp) MUST be invoked only through infrastructure adapters. A behavior change
+MUST come with tests written first (Red-Green-Refactor).
 
 Rationale: tmux/zoxide/fzf interplay is hard to test end-to-end; pure modules
 make the logic deterministic and verifiable.
@@ -49,8 +49,8 @@ Rationale: the bash version's full-tree walk was a silent cost bug; the
 ### V. Simplicity (YAGNI)
 
 Start simple. No speculative features, abstractions, or dependencies without a
-concrete need. Every dependency (tmux, fzf, nvim, zoxide, uv, pytest, ruff)
-MUST have a documented purpose.
+concrete need. Every dependency (tmux, fzf, tmuxp, PyYAML, zoxide, uv,
+pytest, ruff) MUST have a documented purpose.
 
 Rationale: this is a small personal tool; complexity is its main cost.
 
@@ -91,4 +91,4 @@ principles, PATCH for clarifications) with an updated `Last Amended` date and
 a diff description. Reviews MUST verify compliance with the principles above.
 When a principle and a convenience conflict, the principle wins.
 
-**Version**: 1.2.1 | **Ratified**: 2026-10-04 | **Last Amended**: 2026-10-04 (PATCH: clarified dev-safety rule for tmux — no `kill-server` on the default/current server, sandboxed tmux runs must pre-create the socket dir and unset `$TMUX` via `scripts/tmux-sandbox.sh`)
+**Version**: 1.2.2 | **Ratified**: 2026-10-04 | **Last Amended**: 2026-10-04 (PATCH: domain module list gains `workspace`; Principle V dependency examples lose `nvim` and gain `tmuxp`/`PyYAML` per the tmuxp config support plan)

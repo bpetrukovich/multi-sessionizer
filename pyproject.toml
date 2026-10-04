@@ -1,10 +1,10 @@
 [project]
 name = "multi-sessionizer"
-version = "0.1.1"
+version = "0.2.0"
 description = "Create and switch between tmux project sessions"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = ["PyYAML"]
 
 [project.scripts]
 multi-sessionizer = "multi_sessionizer.main:main"

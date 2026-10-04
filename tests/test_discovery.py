@@ -2,7 +2,7 @@ import os
 
 from multi_sessionizer import discovery
 from multi_sessionizer.config import Config
-from multi_sessionizer.discovery import collect_dirs, collect_files
+from multi_sessionizer.discovery import collect_dirs
 
 
 def test_depth1_lists_direct_children_including_hidden(tmp_path):
@@ -41,7 +41,7 @@ def test_hidden_dirs_included_at_depth_two(tmp_path):
 
 
 def test_hidden_root_lists_its_children(tmp_path):
-    hidden = tmp_path / "root" / ".config" / "nvim"
+    hidden = tmp_path / "root" / ".config" / "dotfiles"
     hidden.mkdir(parents=True)
     (hidden / "lua").mkdir()
     cfg = Config(project_roots_depth_1=(str(hidden),))
@@ -154,14 +154,3 @@ def test_no_dedup_when_roots_overlap(tmp_path):
         project_roots_depth_2=(str(root),),
     )
     assert collect_dirs(cfg) == [str(root / "a"), str(root / "a")]
-
-
-def test_collect_files(tmp_path):
-    f = tmp_path / "x"
-    f.touch()
-    cfg = Config(additional_files=(str(f),))
-    assert collect_files(cfg) == [str(f)]
-
-
-def test_collect_files_empty(tmp_path):
-    assert collect_files(Config()) == []

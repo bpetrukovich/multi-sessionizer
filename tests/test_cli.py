@@ -3,14 +3,19 @@ import pytest
 from multi_sessionizer.cli import classify_args
 
 
-def test_classify_dirs_and_files(tmp_path):
+def test_classify_dirs(tmp_path):
     d = tmp_path / "d"
     d.mkdir()
+    dirs, files = classify_args([str(d)])
+    assert dirs == [str(d)]
+    assert files == []
+
+
+def test_classify_file_raises_files_unsupported(tmp_path):
     f = tmp_path / "f"
     f.touch()
-    dirs, files = classify_args([str(d), str(f)])
-    assert dirs == [str(d)]
-    assert files == [str(f)]
+    with pytest.raises(ValueError, match="File paths are not supported"):
+        classify_args([str(f)])
 
 
 def test_classify_resolves_realpath(tmp_path):

@@ -3,6 +3,10 @@
 Every path entering the domain is realpath-normalized here (research R2):
 ``classify_args`` realpaths each argument; ``classify_selection`` realpaths
 each picker line. ``normalize_path = os.path.realpath`` is the single helper.
+
+Directories only (FR-001): file paths are no longer accepted — a file argument
+raises a clear ``ValueError``; the 2-tuple shape is kept for the legacy facade
+with the second slot always empty.
 """
 
 from __future__ import annotations
@@ -17,27 +21,23 @@ normalize_path = os.path.realpath
 
 def classify_args(argv: Sequence[str]) -> tuple[list[str], list[str]]:
     dirs: list[str] = []
-    files: list[str] = []
     for arg in argv:
         if os.path.isdir(arg):
             dirs.append(normalize_path(arg))
         elif os.path.isfile(arg):
-            files.append(normalize_path(arg))
+            raise ValueError(f"File paths are not supported: {arg}")
         else:
             raise ValueError(f"Not a directory or file: {arg}")
-    return dirs, files
+    return dirs, []
 
 
 def classify_selection(lines: list[str]) -> Selection:
     dirs: list[str] = []
-    files: list[str] = []
     for line in lines:
         path = normalize_path(line)
         if os.path.isdir(path):
             dirs.append(path)
-        else:
-            files.append(path)
-    return Selection(tuple(dirs), tuple(files))
+    return Selection(tuple(dirs), ())
 
 
 class PathSelectionClassifier:

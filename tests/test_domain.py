@@ -25,7 +25,10 @@ def snapshot(*, in_tmux=False, tmux_server_running=False, existing=None):
 
 
 def test_plan_is_deterministic():
-    selection = Selection(("/a/one", "/b/two"), ("/a/x.py",))
+    selection = Selection(
+        ("/a/one", "/b/two"),
+        ("session_name: ws\nwindows:\n  - shell_command: vim\n",),
+    )
     snap = snapshot(tmux_server_running=False)
     assert plan(selection, snap) == plan(selection, snap)
 
@@ -62,17 +65,6 @@ def test_core_plan_matches_legacy_wrapper_single_dir():
     assert plan(selection, snap) == plan_legacy(
         ["/a/my.project"],
         [],
-        in_tmux=False,
-        tmux_server_running=False,
-    )
-
-
-def test_core_plan_matches_legacy_wrapper_single_file():
-    selection = Selection((), ("/a/b/file.py",))
-    snap = snapshot(in_tmux=False, tmux_server_running=False)
-    assert plan(selection, snap) == plan_legacy(
-        [],
-        ["/a/b/file.py"],
         in_tmux=False,
         tmux_server_running=False,
     )
