@@ -71,6 +71,10 @@ Rationale: this is a small personal tool; complexity is its main cost.
   exist).
 - Config format stays TOML; session naming rules (dots → `_`, collision
   suffixes) are stable and MUST NOT change silently.
+- The tool NEVER kills or stops tmux sessions itself. Session lifecycle is
+  owned by the user and consuming tools. Removing a config entry (including an
+  external entry) while its session is running MUST leave that session running;
+  deletion only removes the entry, never a live session.
 - All repository content (source code, comments, documentation, specs, and
   config files) MUST be written in English. Quoted user-provided input in specs
   MUST be translated to English. Non-English text MUST NOT be committed.
@@ -91,4 +95,4 @@ principles, PATCH for clarifications) with an updated `Last Amended` date and
 a diff description. Reviews MUST verify compliance with the principles above.
 When a principle and a convenience conflict, the principle wins.
 
-**Version**: 1.2.2 | **Ratified**: 2026-10-04 | **Last Amended**: 2026-10-04 (PATCH: domain module list gains `workspace`; Principle V dependency examples lose `nvim` and gain `tmuxp`/`PyYAML` per the tmuxp config support plan)
+**Version**: 1.2.3 | **Ratified**: 2026-10-04 | **Last Amended**: 2026-10-05 (PATCH: Additional Constraints gains an explicit guarantee that the tool NEVER kills or stops tmux sessions itself; removing an entry never stops a running session)
