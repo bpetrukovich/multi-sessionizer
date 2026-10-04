@@ -1,80 +1,14 @@
-"""Configuration loading from a TOML file.
-
-The config file lives at ``~/.config/multi-sessionizer/config.toml`` (override
-with the ``MULTI_SESSIONIZER_CONFIG`` environment variable). The file is
-required: there are no built-in defaults, the user is expected to write their
-own. Every key is optional; missing keys simply mean "empty list". Environment
-variables (``$HOME``, ...) and ``~`` are expanded in every path.
-"""
+"""Legacy facade: re-exports config DTO + infrastructure loader (zero logic)."""
 
 from __future__ import annotations
 
-import os
-import tomllib
-from dataclasses import dataclass
-from pathlib import Path
+from .app.configuration import Config, ConfigNotFoundError
+from .infrastructure.config_loader import load_config, missing_dirs, missing_files
 
-DEFAULT_CONFIG_PATH = Path("~/.config/multi-sessionizer/config.toml").expanduser()
-ENV_CONFIG_PATH = "MULTI_SESSIONIZER_CONFIG"
-
-_FIELDS = (
-    "project_roots_depth_1",
-    "project_roots_depth_2",
-    "additional_dirs",
-    "additional_files",
-)
-
-
-class ConfigNotFoundError(FileNotFoundError):
-    """Raised when the configuration file does not exist."""
-
-
-def _expand(value: str) -> str:
-    return os.path.expanduser(os.path.expandvars(value))
-
-
-def _expand_tuple(values: tuple[str, ...]) -> tuple[str, ...]:
-    return tuple(_expand(v) for v in values)
-
-
-@dataclass(frozen=True)
-class Config:
-    project_roots_depth_1: tuple[str, ...] = ()
-    project_roots_depth_2: tuple[str, ...] = ()
-    additional_dirs: tuple[str, ...] = ()
-    additional_files: tuple[str, ...] = ()
-
-
-def _as_tuple(value: object) -> tuple[str, ...]:
-    if value is None:
-        return ()
-    if isinstance(value, str):
-        return (value,)
-    return tuple(value)
-
-
-def load_config(path: str | Path | None = None) -> Config:
-    if path is None:
-        path = Path(os.environ.get(ENV_CONFIG_PATH, DEFAULT_CONFIG_PATH))
-    path = Path(path)
-
-    if not path.is_file():
-        raise ConfigNotFoundError(path)
-
-    with path.open("rb") as fh:
-        data = tomllib.load(fh)
-
-    values: dict[str, tuple[str, ...]] = {}
-    for field in _FIELDS:
-        raw = data.get(field)
-        values[field] = _expand_tuple(_as_tuple(raw))
-    return Config(**values)
-
-
-def missing_files(cfg: Config) -> list[str]:
-    return [p for p in cfg.additional_files if not os.path.exists(p)]
-
-
-def missing_dirs(cfg: Config) -> list[str]:
-    roots = (*cfg.project_roots_depth_1, *cfg.project_roots_depth_2)
-    return [p for p in (*roots, *cfg.additional_dirs) if not os.path.isdir(p)]
+__all__ = [
+    "Config",
+    "ConfigNotFoundError",
+    "load_config",
+    "missing_dirs",
+    "missing_files",
+]

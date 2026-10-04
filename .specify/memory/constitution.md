@@ -16,10 +16,14 @@ from the terminal.
 ### II. Pure, Test-First Modules (NON-NEGOTIABLE)
 
 Behavior MUST live in small, single-responsibility, pure modules that are
-unit-tested before integration. `config`, `discovery`, `rank`, `naming`,
-`cli`, and `decisions` MUST stay free of direct side effects; `runner` and
-`main` are the only places that touch subprocesses and the environment. A
-behavior change MUST come with tests written first (Red-Green-Refactor).
+unit-tested before integration. Pure business logic lives in the `domain`
+layer (`naming`, `rank`, `plan`, `run`) and MUST stay free of direct side
+effects. The `app` layer is a thin wiring layer that owns the configuration
+DTO and the adapter contracts and contains no business rules. All side
+effects (subprocess, filesystem, environment, stdin/stdout, terminal) live in
+the `infrastructure` layer. External tools (tmux, fzf, zoxide, pgrep) MUST be
+invoked only through infrastructure adapters. A behavior change MUST come
+with tests written first (Red-Green-Refactor).
 
 Rationale: tmux/zoxide/fzf interplay is hard to test end-to-end; pure modules
 make the logic deterministic and verifiable.
@@ -56,8 +60,15 @@ Rationale: this is a small personal tool; complexity is its main cost.
 - Lint and format with `ruff`; tests with `pytest`.
 - No new runtime dependencies without justification in the README dependency
   table.
-- External tools MUST be invoked only through the `runner` module, never
+- External tools MUST be invoked only through infrastructure adapters, never
   inline.
+- Development MUST never risk the developer's live tmux server: `tmux
+  kill-server` is forbidden on the default/current server; test sessions are
+  killed by name (`tmux kill-session -t <name>`); anything that creates/kills
+  tmux sessions runs under `scripts/tmux-sandbox.sh` (which pre-creates the
+  socket directory and unsets `$TMUX`, because tmux 3.4 silently falls back to
+  the default socket when `$TMUX_TMPDIR` points to a directory that does not
+  exist).
 - Config format stays TOML; session naming rules (dots → `_`, collision
   suffixes) are stable and MUST NOT change silently.
 - All repository content (source code, comments, documentation, specs, and
@@ -80,4 +91,4 @@ principles, PATCH for clarifications) with an updated `Last Amended` date and
 a diff description. Reviews MUST verify compliance with the principles above.
 When a principle and a convenience conflict, the principle wins.
 
-**Version**: 1.1.0 | **Ratified**: 2026-10-04 | **Last Amended**: 2026-10-04 (MINOR: added repository-language constraint — all content must be in English)
+**Version**: 1.2.1 | **Ratified**: 2026-10-04 | **Last Amended**: 2026-10-04 (PATCH: clarified dev-safety rule for tmux — no `kill-server` on the default/current server, sandboxed tmux runs must pre-create the socket dir and unset `$TMUX` via `scripts/tmux-sandbox.sh`)

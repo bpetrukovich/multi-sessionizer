@@ -1,10 +1,7 @@
-"""Session name generation (basename with dots replaced by underscores)."""
+"""Legacy facade: re-exports the domain naming capability (zero logic)."""
 
 from __future__ import annotations
 
-import os
+from .domain.naming import session_name
 
-
-def session_name(path: str) -> str:
-    name = os.path.basename(path.rstrip("/"))
-    return (name or "/").replace(".", "_")
+__all__ = ["session_name"]

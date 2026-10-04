@@ -160,18 +160,24 @@ uv run ruff check .    # lint
 uv run ruff format .   # format
 ```
 
-The code is split into pure, unit-tested modules:
+The code is split into three strictly separated layers:
 
-| Module | Responsibility |
-|---|---|
-| `config.py` | TOML config loading, defaults, existence validation |
-| `discovery.py` | directory/file collection (depth 1/2, pruned traversal) |
-| `rank.py` | zoxide score parsing and ranking |
-| `naming.py` | session name generation |
-| `cli.py` | argument classification |
-| `decisions.py` | pure planning of the tmux/zoxide command sequence |
-| `runner.py` | thin subprocess wrapper around tmux/fzf/zoxide/pgrep |
-| `main.py` | wiring and the entry point |
+| Layer | Responsibility | Modules |
+|---|---|---|
+| `domain` | pure business logic, no I/O | `models` (DTOs), `naming`, `rank`, `plan`, `run` |
+| `app` | thin wiring, DTO + adapter-contract ownership | `configuration`, `ports`, `flows` |
+| `infrastructure` | all side effects (subprocess, filesystem, environment, terminal) | `config_loader`, `discovery`, `classifier`, `runner`, `messages` |
+
+Dependency direction is a single rule: `domain` imports nothing, `app` imports
+`domain` only, `infrastructure` imports both. The domain owns the DTOs
+(`Selection`, `RuntimeSnapshot`, `Command`/`CommandPlan`); the app owns the
+`Configuration` DTO and the adapter contracts (protocols) that infrastructure
+implements; external tools (tmux, fzf, zoxide, pgrep) are invoked only through
+infrastructure adapters, so any adapter (e.g. the command executor) can be
+replaced without touching the domain or the app wiring. The top-level modules
+(`cli.py`, `config.py`, `discovery.py`, `rank.py`, `naming.py`, `decisions.py`,
+`runner.py`) are zero-logic re-export facades kept so the public import paths
+stay unchanged.
 
 ### Reinstalling into PATH
 
