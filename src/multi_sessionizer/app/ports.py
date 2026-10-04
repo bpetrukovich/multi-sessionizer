@@ -12,9 +12,32 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
-from ..domain.models import RuntimeSnapshot, Selection
+from ..domain.models import RuntimeSnapshot, Selection, SessionEntry
 from ..domain.run import CommandExecutor
 from .configuration import Config
+
+
+class ExternalStoreError(Exception):
+    """Raised when the store is corrupt or unreadable (FR-016)."""
+
+
+@dataclass(frozen=True)
+class ExternalAddResult:
+    ok: bool
+    entry: SessionEntry | None = None  # stored entry on success
+    error: str = ""  # duplicate / invalid message on failure
+
+
+@dataclass(frozen=True)
+class ExternalDeleteResult:
+    ok: bool
+    message: str = ""  # success / not-found / ambiguous text
+
+
+class ExternalStore(Protocol):
+    def add(self, entry: SessionEntry) -> ExternalAddResult: ...
+    def delete(self, key: str) -> ExternalDeleteResult: ...
+    def list_entries(self) -> tuple[SessionEntry, ...]: ...
 
 
 class ConfigLoader(Protocol):
@@ -48,6 +71,10 @@ class MessageOutput(Protocol):
     def missing_dirs(self, missing_dirs: list[str]) -> None: ...
     def workspace_problems(self, problems: list[str]) -> None: ...
     def error(self, msg: str) -> None: ...
+    def external_added(self, label: str) -> None: ...
+    def external_list(self, rows: list[tuple[str, str, str]]) -> None: ...
+    def external_deleted(self, message: str) -> None: ...
+    def external_empty(self) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -60,3 +87,4 @@ class FlowDeps:
     probe: EnvironmentProbe
     executor: CommandExecutor
     messages: MessageOutput
+    external_store: ExternalStore

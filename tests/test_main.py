@@ -78,6 +78,12 @@ def test_split_session():
     assert main._split_argv(["session", "<yaml>", "<yaml>"]) == ("session", ["<yaml>", "<yaml>"])
 
 
+def test_split_external():
+    assert main._split_argv(["external", "add", "/a"]) == ("external", ["add", "/a"])
+    assert main._split_argv(["external", "list"]) == ("external", ["list"])
+    assert main._split_argv(["external", "delete", "k"]) == ("external", ["delete", "k"])
+
+
 def test_session_runs_flow(monkeypatch):
     captured = {}
 
@@ -106,6 +112,61 @@ def test_help_shows_session_subcommand(capsys):
     assert main.main(["--help"]) == 0
     out = capsys.readouterr().out
     assert "session" in out
+
+
+def test_help_shows_external_subcommand(capsys):
+    assert main.main(["--help"]) == 0
+    out = capsys.readouterr().out
+    assert "external add ENTRY" in out
+    assert "external list" in out
+    assert "external delete KEY" in out
+
+
+def test_external_dispatch_unknown_verb(capsys):
+    assert main.main(["external", "nope"]) == 2
+    err = capsys.readouterr().err
+    assert "unknown external command: nope" in err
+
+
+def test_external_dispatch_add_missing_entry(capsys):
+    assert main.main(["external", "add"]) == 2
+    assert "external add requires an ENTRY" in capsys.readouterr().err
+
+
+def test_external_dispatch_add(monkeypatch):
+    captured = {}
+
+    def fake_add(arg, deps):
+        captured["arg"] = arg
+        return 0
+
+    monkeypatch.setattr(main, "add_external_flow", fake_add)
+    assert main.main(["external", "add", "/x/y"]) == 0
+    assert captured["arg"] == "/x/y"
+
+
+def test_external_dispatch_list(monkeypatch):
+    captured = {}
+
+    def fake_list(deps):
+        captured["called"] = True
+        return 0
+
+    monkeypatch.setattr(main, "list_external_flow", fake_list)
+    assert main.main(["external", "list"]) == 0
+    assert captured["called"] is True
+
+
+def test_external_dispatch_delete(monkeypatch):
+    captured = {}
+
+    def fake_delete(key, deps):
+        captured["key"] = key
+        return 0
+
+    monkeypatch.setattr(main, "delete_external_flow", fake_delete)
+    assert main.main(["external", "delete", "ext-ws"]) == 0
+    assert captured["key"] == "ext-ws"
 
 
 def _interactive_with_config(tmp_path, monkeypatch, content):

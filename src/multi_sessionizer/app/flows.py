@@ -15,12 +15,72 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from ..domain.external import classify_external_input, deletion_key, resolve_delete
 from ..domain.models import Selection, SessionEntry
 from ..domain.rank import parse_zoxide_scores, rank_dirs
 from ..domain.run import ProvisioningError, run
 from ..domain.workspace import validate_workspace, workspace_label
 from .configuration import ConfigError, ConfigNotFoundError
-from .ports import FlowDeps
+from .ports import ExternalStoreError, FlowDeps
+
+
+def external_label(entry: SessionEntry) -> str:
+    """Picker line for an external entry: ``[external] <path|name|desired_name>``."""
+    return f"[external] {deletion_key(entry)}"
+
+
+def add_external_flow(arg: str, deps: FlowDeps) -> int:
+    entry, problems = classify_external_input(arg)
+    if entry is None:
+        for problem in problems:
+            deps.messages.error(problem)
+        return 1
+    try:
+        result = deps.external_store.add(entry)
+    except ExternalStoreError as exc:
+        deps.messages.error(f"External store error: {exc}.")
+        return 1
+    if not result.ok:
+        deps.messages.error(result.error)
+        return 1
+    deps.messages.external_added(deletion_key(result.entry))
+    return 0
+
+
+def list_external_flow(deps: FlowDeps) -> int:
+    try:
+        entries = deps.external_store.list_entries()
+    except ExternalStoreError as exc:
+        deps.messages.error(f"External store error: {exc}.")
+        return 1
+    if not entries:
+        deps.messages.external_empty()
+        return 0
+    rows = [(entry.kind, external_label(entry), deletion_key(entry)) for entry in entries]
+    deps.messages.external_list(rows)
+    return 0
+
+
+def delete_external_flow(key: str, deps: FlowDeps) -> int:
+    try:
+        entries = deps.external_store.list_entries()
+    except ExternalStoreError as exc:
+        deps.messages.error(f"External store error: {exc}.")
+        return 1
+    matches, problems = resolve_delete(entries, key)
+    if not matches:
+        deps.messages.error(problems[0])
+        return 1
+    if len(matches) > 1:
+        deps.messages.error(problems[0])
+        deps.messages.error("No entry was removed.")
+        return 1
+    result = deps.external_store.delete(key)
+    if not result.ok:
+        deps.messages.error(result.message)
+        return 1
+    deps.messages.external_deleted(f"multi-sessionizer: deleted [external] {key}")
+    return 0
 
 
 def run_selection(selection: Selection, deps: FlowDeps) -> int:
@@ -85,6 +145,14 @@ def interactive_flow(deps: FlowDeps) -> int:
             candidates.append((workspace_label(entry.definition), entry))
         elif entry.kind == "group":
             candidates.append((_group_display(entry), entry))
+
+    try:
+        external_entries = deps.external_store.list_entries()
+    except ExternalStoreError as exc:
+        deps.messages.error(f"External store error: {exc}.")
+        external_entries = ()
+    for entry in external_entries:
+        candidates.append((external_label(entry), entry))
 
     items, route = _disambiguated(candidates)
     selected = deps.picker.pick(items)

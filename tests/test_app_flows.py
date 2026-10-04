@@ -9,9 +9,25 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
+import pytest
+
 from multi_sessionizer.app.configuration import Config, ConfigError, ConfigNotFoundError
-from multi_sessionizer.app.flows import interactive_flow, run_selection, session_flow, switch_flow
-from multi_sessionizer.app.ports import FlowDeps
+from multi_sessionizer.app.flows import (
+    add_external_flow,
+    delete_external_flow,
+    interactive_flow,
+    list_external_flow,
+    run_selection,
+    session_flow,
+    switch_flow,
+)
+from multi_sessionizer.app.ports import (
+    ExternalAddResult,
+    ExternalDeleteResult,
+    ExternalStoreError,
+    FlowDeps,
+)
+from multi_sessionizer.domain.external import deletion_key
 from multi_sessionizer.domain.models import (
     Command,
     CommandPlan,
@@ -19,10 +35,11 @@ from multi_sessionizer.domain.models import (
     Selection,
     SessionEntry,
 )
-from multi_sessionizer.domain.workspace import fingerprint
+from multi_sessionizer.domain.workspace import desired_name, fingerprint
 
 WS_DEF = "session_name: myws\nwindows:\n  - shell_command: vim\n"
 BAD_WS = "windows: []\n"
+GRP_DEF = "name: ext-stack\nsessions:\n  - /p/b\n"
 
 
 def ws_entry(definition=WS_DEF):
@@ -139,6 +156,10 @@ class FakeMessages:
         self.missing = []
         self.problems = []
         self.errors = []
+        self.added = []
+        self.list_rows = []
+        self.deleted = []
+        self.empty_calls = 0
 
     def config_not_found(self, path: object) -> None:
         self.calls.append("config_not_found")
@@ -156,6 +177,56 @@ class FakeMessages:
         self.calls.append("error")
         self.errors.append(msg)
 
+    def external_added(self, label: str) -> None:
+        self.calls.append("external_added")
+        self.added.append(label)
+
+    def external_list(self, rows: list[tuple[str, str, str]]) -> None:
+        self.calls.append("external_list")
+        self.list_rows = rows
+
+    def external_deleted(self, message: str) -> None:
+        self.calls.append("external_deleted")
+        self.deleted.append(message)
+
+    def external_empty(self) -> None:
+        self.calls.append("external_empty")
+        self.empty_calls += 1
+
+
+class FakeExternalStore:
+    def __init__(self, entries=()):
+        self.calls: list[str] = []
+        self.entries = list(entries)
+        self.add_results = []
+        self.delete_results = []
+        self.error: Exception | None = None
+
+    def add(self, entry: SessionEntry):
+        self.calls.append("add")
+        if self.error is not None:
+            raise self.error
+        result = self.add_results.pop(0) if self.add_results else None
+        if result is not None:
+            return result
+        self.entries.append(entry)
+        return ExternalAddResult(ok=True, entry=entry)
+
+    def delete(self, key: str):
+        self.calls.append("delete")
+        if self.error is not None:
+            raise self.error
+        result = self.delete_results.pop(0) if self.delete_results else None
+        if result is not None:
+            return result
+        return ExternalDeleteResult(ok=True, message=f"Deleted external entry '{key}'.")
+
+    def list_entries(self):
+        self.calls.append("list_entries")
+        if self.error is not None:
+            raise self.error
+        return tuple(self.entries)
+
 
 def make_deps(**kw):
     kw.setdefault("config_loader", FakeConfigLoader())
@@ -166,6 +237,7 @@ def make_deps(**kw):
     kw.setdefault("probe", FakeProbe())
     kw.setdefault("executor", FakeExecutor())
     kw.setdefault("messages", FakeMessages())
+    kw.setdefault("external_store", FakeExternalStore())
     return FlowDeps(**kw)
 
 
@@ -358,6 +430,7 @@ def test_full_wiring_replaceable_executor(monkeypatch, tmp_path):
         probe=FakeProbe(snapshot=RuntimeSnapshot(False, False, {})),
         executor=FakeExecutor(),
         messages=FakeMessages(),
+        external_store=FakeExternalStore(),
     )
     assert interactive_flow(deps) == 0
     assert deps.executor.plans == [
@@ -533,3 +606,217 @@ def test_config_error_surfaces_via_error_and_returns_one():
         "Group 'g' has an empty 'sessions' list.",
     ]
     assert deps.executor.calls == []
+
+
+# --- User Story 1: external add ---------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "arg, expected",
+    [
+        ("/x/y", dir_entry("/x/y")),
+        (WS_DEF, ws_entry()),
+        (GRP_DEF, group_entry("ext-stack", [dir_entry("/p/b")])),
+    ],
+)
+def test_add_external_flow_valid_calls_store_and_confirms(arg, expected):
+    store = FakeExternalStore()
+    messages = FakeMessages()
+    deps = make_deps(external_store=store, messages=messages)
+    assert add_external_flow(arg, deps) == 0
+    assert store.calls == ["add"]
+    assert store.entries == [expected]
+    assert messages.calls == ["external_added"]
+    assert messages.added == [deletion_key(expected)]
+
+
+def test_add_external_flow_invalid_entry_reports_and_never_stores():
+    store = FakeExternalStore()
+    messages = FakeMessages()
+    deps = make_deps(external_store=store, messages=messages)
+    assert add_external_flow("foo: bar\nbaz: 1\n", deps) == 1
+    assert store.calls == []
+    assert "error" in messages.calls
+    assert len(messages.errors) == 1
+
+
+def test_add_external_flow_duplicate_reports_error_and_returns_one():
+    store = FakeExternalStore()
+    store.add_results = [ExternalAddResult(ok=False, error="External entry already exists: /x/y.")]
+    messages = FakeMessages()
+    deps = make_deps(external_store=store, messages=messages)
+    assert add_external_flow("/x/y", deps) == 1
+    assert store.calls == ["add"]
+    assert "external_added" not in messages.calls
+    assert messages.errors == ["External entry already exists: /x/y."]
+
+
+# --- User Story 2: external list --------------------------------------------
+
+
+def test_list_external_flow_nonempty_calls_external_list():
+    store = FakeExternalStore(
+        entries=[dir_entry("/x/y"), ws_entry(WS_DEF), group_entry("ext-stack", [dir_entry("/p/b")])]
+    )
+    messages = FakeMessages()
+    deps = make_deps(external_store=store, messages=messages)
+    assert list_external_flow(deps) == 0
+    assert store.calls == ["list_entries"]
+    assert messages.calls == ["external_list"]
+    assert messages.list_rows == [
+        ("directory", "[external] /x/y", "/x/y"),
+        ("workspace", f"[external] {desired_name(WS_DEF)}", desired_name(WS_DEF)),
+        ("group", "[external] ext-stack", "ext-stack"),
+    ]
+
+
+def test_list_external_flow_empty_calls_external_empty():
+    store = FakeExternalStore()
+    messages = FakeMessages()
+    deps = make_deps(external_store=store, messages=messages)
+    assert list_external_flow(deps) == 0
+    assert messages.calls == ["external_empty"]
+    assert "external_list" not in messages.calls
+
+
+# --- User Story 3: external delete -------------------------------------------
+
+
+def test_delete_external_flow_single_match_calls_store_delete():
+    store = FakeExternalStore(entries=[dir_entry("/x/y")])
+    messages = FakeMessages()
+    deps = make_deps(external_store=store, messages=messages)
+    assert delete_external_flow("/x/y", deps) == 0
+    assert store.calls == ["list_entries", "delete"]
+    assert messages.calls == ["external_deleted"]
+    assert len(messages.deleted) == 1
+
+
+def test_delete_external_flow_not_found_reports_and_no_delete():
+    store = FakeExternalStore(entries=[dir_entry("/x/y")])
+    messages = FakeMessages()
+    deps = make_deps(external_store=store, messages=messages)
+    assert delete_external_flow("/nope", deps) == 1
+    assert store.calls == ["list_entries"]
+    assert "delete" not in store.calls
+    assert messages.errors == ["No external entry with deletion key '/nope'."]
+
+
+def test_delete_external_flow_ambiguous_reports_matches_and_removes_none():
+    ws1 = ws_entry('session_name: "shared"\nwindows:\n  - shell_command: one\n')
+    ws2 = ws_entry('session_name: "shared"\nwindows:\n  - shell_command: two\n')
+    store = FakeExternalStore(entries=[ws1, ws2])
+    messages = FakeMessages()
+    deps = make_deps(external_store=store, messages=messages)
+    assert delete_external_flow("shared", deps) == 1
+    assert store.calls == ["list_entries"]
+    assert "delete" not in store.calls
+    assert "matches multiple entries" in messages.errors[0]
+
+
+# --- User Story 4: picker integration ---------------------------------------
+
+
+def test_interactive_flow_merges_external_candidates():
+    store = FakeExternalStore(
+        entries=[
+            dir_entry("/ext/d"),
+            ws_entry(WS_DEF),
+            group_entry("ext-stack", [dir_entry("/p/b")]),
+        ]
+    )
+    loader = FakeConfigLoader(cfg=Config(sessions=(dir_entry("/cfg/a"),)))
+    deps = make_deps(
+        config_loader=loader,
+        discovery=FakeDiscovery(dirs=[]),
+        scorer=FakeScorer(""),
+        external_store=store,
+        picker=FakePicker(selected=[]),
+        executor=FakeExecutor(),
+    )
+    assert interactive_flow(deps) == 0
+    assert deps.picker.items == [
+        "/cfg/a",
+        "[external] /ext/d",
+        f"[external] {desired_name(WS_DEF)}",
+        "[external] ext-stack",
+    ]
+
+
+def test_interactive_flow_mixed_external_and_config_routing():
+    store = FakeExternalStore(entries=[dir_entry("/ext/d"), ws_entry(WS_DEF)])
+    loader = FakeConfigLoader(cfg=Config(sessions=(dir_entry("/cfg/a"),)))
+    deps = make_deps(
+        config_loader=loader,
+        discovery=FakeDiscovery(dirs=[]),
+        scorer=FakeScorer(""),
+        external_store=store,
+        picker=FakePicker(
+            selected=["/cfg/a", "[external] /ext/d", f"[external] {desired_name(WS_DEF)}"]
+        ),
+        classifier=FakeClassifier(selection=Selection(("/cfg/a", "/ext/d"), ())),
+        probe=FakeProbe(snapshot=RuntimeSnapshot(False, False, {})),
+        executor=FakeExecutor(),
+    )
+    assert interactive_flow(deps) == 0
+    assert deps.classifier.calls == ["classify_selection"]
+    assert deps.classifier.lines == ["/cfg/a", "/ext/d"]
+    assert deps.executor.calls == ["execute"]
+    assert len(deps.executor.plans) == 1
+    assert fingerprint(WS_DEF) in {c.args[-1] for c in deps.executor.plans[0]}
+
+
+def test_interactive_flow_corrupt_store_degrades_gracefully():
+    store = FakeExternalStore()
+    store.error = ExternalStoreError("file is not a database")
+    loader = FakeConfigLoader(cfg=Config(sessions=(dir_entry("/cfg/a"),)))
+    messages = FakeMessages()
+    deps = make_deps(
+        config_loader=loader,
+        discovery=FakeDiscovery(dirs=[]),
+        scorer=FakeScorer(""),
+        external_store=store,
+        messages=messages,
+        picker=FakePicker(selected=[]),
+        executor=FakeExecutor(),
+    )
+    assert interactive_flow(deps) == 0
+    assert "External store error: file is not a database." in messages.errors
+    assert deps.picker.items == ["/cfg/a"]
+
+
+@pytest.mark.parametrize(
+    "flow,args",
+    [
+        (add_external_flow, ("/x/y",)),
+        (list_external_flow, ()),
+        (delete_external_flow, ("/x/y",)),
+    ],
+)
+def test_external_flows_report_corrupt_store_and_return_one(flow, args):
+    store = FakeExternalStore()
+    store.error = ExternalStoreError("file is not a database")
+    messages = FakeMessages()
+    deps = make_deps(external_store=store, messages=messages)
+    assert flow(*args, deps) == 1
+    assert messages.errors == ["External store error: file is not a database."]
+
+
+def test_external_list_columns_are_separated_when_label_is_long(capsys):
+    from multi_sessionizer.infrastructure.messages import ConsoleMessageOutput
+
+    rows = [
+        (
+            "directory",
+            "[external] /home/u/very/long/scikit_learn_data",
+            "/home/u/very/long/scikit_learn_data",
+        ),
+        ("workspace", "[external] myws", "myws"),
+    ]
+    ConsoleMessageOutput().external_list(rows)
+    out = capsys.readouterr().out.splitlines()
+    assert len(out) == 2
+    assert "  /home/u/very/long/scikit_learn_data" in out[0]
+    assert out[0].endswith("scikit_learn_data")
+    assert out[1].endswith("myws")
+    assert "mywsmyws" not in "".join(out)

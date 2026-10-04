@@ -14,6 +14,7 @@ Python 3.12+ rewrite of the original bash script: configuration moved to a TOML 
 - **Smart switching**: depending on the context, the script either attaches to the first session, calls `tmux choose-session` (when already inside tmux), or performs a plain `tmux attach`.
 - **zoxide statistics**: every opened directory is added to zoxide (`zoxide add`), and more frequently used projects appear higher in the picker.
 - **Configuration validation**: before an interactive run, the script verifies that all configured directories exist and all configured workspaces are valid; otherwise it prints a list of problems.
+- **External entries**: add, list, and delete picker entries (directory, inline tmuxp workspace, named group) from the CLI with the `external` subcommand. They live in a separate sqlite store and are merged into the picker under a distinct `[external]` label — without ever touching your config file.
 - **Dot-free session names**: dots in directory names are replaced with underscores (e.g. `my.project` → `my_project`).
 - **Collision-safe session names**: duplicate basenames never share a session — the second and later ones get a numeric suffix (`dup`, `dup-2`, `dup-3`); an existing session is reused only when it points at the same directory, so you never silently land in someone else's cwd.
 
@@ -165,7 +166,10 @@ The list contains:
 - the directory entries from `sessions`;
 - the workspace entries from `sessions` (shown as `[tmuxp] <label>` lines);
 - the named groups from `sessions` (shown as `[group] <name>` lines) — selecting
-  one provisions every member session in a single pick.
+  one provisions every member session in a single pick;
+- the **external entries** added via `external add` (shown as `[external] <label>`
+  lines) — mixed with config entries in a single multi-select and provisioned
+  the same way.
 
 Directories are sorted by frequency of use (zoxide); workspace and group entries
 are appended to the end of the list.
@@ -198,6 +202,45 @@ windows:
 ```
 
 Each argument is one workspace definition (YAML). The session is provisioned with `tmuxp load -d --no-progress -s <name> <config>`, stamped with the marker, and reused on later runs. The `session` subcommand does not read the config file — each workspace passed on the CLI is self-contained.
+
+### External entries (`external add` / `external list` / `external delete`)
+
+The `external` subcommand permanently adds, lists, and deletes picker entries
+without touching your config file. Entries are stored in a separate sqlite
+database at `~/.local/state/multi-sessionizer/external.db` (override the path
+with the `MULTI_SESSIONIZER_STORE` environment variable), and appear in the
+interactive picker under an `[external]` label alongside your config entries.
+
+```bash
+# add a directory entry
+multi-sessionizer external add "$HOME/projects/web-frontend"
+
+# add an inline tmuxp workspace entry (shown as its session name)
+multi-sessionizer external add 'session_name: "project"
+windows:
+  - shell_command: "make dev"'
+
+# add a named group entry (a YAML mapping with a name + sessions list)
+multi-sessionizer external add 'name: frontend stack
+sessions:
+  - "$HOME/work/web-frontend"
+  - |-
+    session_name: "dev-server"
+    windows:
+      - shell_command: "yarn dev"'
+
+# list every entry with its kind, picker label, and deletion key
+multi-sessionizer external list
+
+# delete an entry by its key (path / session name / group name)
+multi-sessionizer external delete dev-server
+```
+
+Deletion keys are printed by `external list`; for a directory the key is its
+realpath-normalized path, for a workspace its session name, and for a group its
+name. Deleting an entry only removes its row from the store — it never kills a
+running tmux session. A duplicate `external add` is rejected with a clear
+message.
 
 Exit codes: `0` — success (including `--help`/`--version`), `1` — a bad path, an invalid workspace, a configuration problem, or a provisioning failure, `2` — an unknown command.
 

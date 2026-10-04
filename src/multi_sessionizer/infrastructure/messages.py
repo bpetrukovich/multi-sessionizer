@@ -50,3 +50,17 @@ class ConsoleMessageOutput:
 
     def error(self, msg: str) -> None:
         print(msg, file=sys.stderr)
+
+    def external_added(self, label: str) -> None:
+        print(f"multi-sessionizer: added [external] {label}")
+
+    def external_list(self, rows: list[tuple[str, str, str]]) -> None:
+        width = max((len(label) for _, label, _ in rows), default=0)
+        for kind, label, deletion_key in rows:
+            print(f"{kind:<11}{label:<{width}}  {deletion_key}")
+
+    def external_deleted(self, message: str) -> None:
+        print(message)
+
+    def external_empty(self) -> None:
+        print("No external entries yet.")
