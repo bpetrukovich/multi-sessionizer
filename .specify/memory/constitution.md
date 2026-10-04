@@ -60,6 +60,9 @@ Rationale: this is a small personal tool; complexity is its main cost.
   inline.
 - Config format stays TOML; session naming rules (dots → `_`, collision
   suffixes) are stable and MUST NOT change silently.
+- All repository content (source code, comments, documentation, specs, and
+  config files) MUST be written in English. Quoted user-provided input in specs
+  MUST be translated to English. Non-English text MUST NOT be committed.
 
 ## Development Workflow
 
@@ -77,4 +80,4 @@ principles, PATCH for clarifications) with an updated `Last Amended` date and
 a diff description. Reviews MUST verify compliance with the principles above.
 When a principle and a convenience conflict, the principle wins.
 
-**Version**: 1.0.0 | **Ratified**: 2026-10-04 | **Last Amended**: 2026-10-04
+**Version**: 1.1.0 | **Ratified**: 2026-10-04 | **Last Amended**: 2026-10-04 (MINOR: added repository-language constraint — all content must be in English)
