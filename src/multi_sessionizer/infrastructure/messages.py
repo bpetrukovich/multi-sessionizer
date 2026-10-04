@@ -10,8 +10,20 @@ import sys
 CONFIG_EXAMPLE = """\
 project_roots_depth_1 = ["$HOME"]
 project_roots_depth_2 = ["$HOME/work"]
-additional_dirs = ["$HOME/Documents", "$HOME/Projects"]
-tmuxp_workspaces = ["session_name: \"project\"\nwindows:\n  - shell_command: \"vim\"\n"]
+sessions = [
+  "$HOME/Documents",
+  "$HOME/Projects",
+  'session_name: "project"
+windows:
+  - shell_command: "vim"',
+  { name = "frontend stack",
+    sessions = [
+      "$HOME/work/web-frontend",
+      'session_name: "dev-server"
+windows:
+  - shell_command: "yarn dev"',
+    ] },
+]
 """
 
 

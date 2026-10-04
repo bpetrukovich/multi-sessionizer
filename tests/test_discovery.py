@@ -117,13 +117,18 @@ def test_scan_cost_is_bounded_by_max_depth(tmp_path, monkeypatch):
     assert len(calls) <= 1 + 5 + 25
 
 
-def test_additional_dirs_verbatim_even_if_missing(tmp_path):
-    missing = tmp_path / "nope"
-    cfg = Config(additional_dirs=(str(missing), "/some/where"))
-    assert collect_dirs(cfg) == [str(missing), "/some/where"]
+def test_session_entries_not_collected_by_discovery(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "a").mkdir()
+    cfg = Config(
+        project_roots_depth_1=(str(root),),
+        sessions=(type("E", (), {"kind": "directory", "path": "/session/entry"})(),),
+    )
+    assert collect_dirs(cfg) == [str(root / "a")]
 
 
-def test_order_depth1_then_depth2_then_extra(tmp_path):
+def test_order_depth1_then_depth2(tmp_path):
     r1 = tmp_path / "r1"
     r1.mkdir()
     (r1 / "a").mkdir()
@@ -134,14 +139,12 @@ def test_order_depth1_then_depth2_then_extra(tmp_path):
     cfg = Config(
         project_roots_depth_1=(str(r1),),
         project_roots_depth_2=(str(r2),),
-        additional_dirs=("/extra",),
     )
     assert collect_dirs(cfg) == [
         str(r1 / "a"),
         str(r1 / "b"),
         str(r2 / "c"),
         str(r2 / "c" / "d"),
-        "/extra",
     ]
 
 

@@ -3,8 +3,10 @@
 Replicates the ``find`` invocations of the original bash script:
 
 - ``project_roots_depth_1``: direct subdirectories of each root;
-- ``project_roots_depth_2``: subdirectories and their direct children;
-- ``additional_dirs`` are added verbatim.
+- ``project_roots_depth_2``: subdirectories and their direct children.
+
+``additional_dirs`` is removed — directory session entries are added by the
+flow, not by discovery (data-model §6).
 
 The traversal is pruned at the configured depth (like ``find -maxdepth``), so
 deep trees are never walked (constitution IV). Hidden directories (``.git``,
@@ -54,7 +56,6 @@ def collect_dirs(cfg: Config) -> list[str]:
         dirs.extend(_find_dirs(root, 1, 1))
     for root in cfg.project_roots_depth_2:
         dirs.extend(_find_dirs(root, 1, 2))
-    dirs.extend(cfg.additional_dirs)
     return dirs
 
 

@@ -9,14 +9,32 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
-from multi_sessionizer.app.configuration import Config, ConfigNotFoundError
+from multi_sessionizer.app.configuration import Config, ConfigError, ConfigNotFoundError
 from multi_sessionizer.app.flows import interactive_flow, run_selection, session_flow, switch_flow
 from multi_sessionizer.app.ports import FlowDeps
-from multi_sessionizer.domain.models import Command, CommandPlan, RuntimeSnapshot, Selection
+from multi_sessionizer.domain.models import (
+    Command,
+    CommandPlan,
+    RuntimeSnapshot,
+    Selection,
+    SessionEntry,
+)
 from multi_sessionizer.domain.workspace import fingerprint
 
 WS_DEF = "session_name: myws\nwindows:\n  - shell_command: vim\n"
 BAD_WS = "windows: []\n"
+
+
+def ws_entry(definition=WS_DEF):
+    return SessionEntry(kind="workspace", definition=definition)
+
+
+def dir_entry(path):
+    return SessionEntry(kind="directory", path=path)
+
+
+def group_entry(name, members):
+    return SessionEntry(kind="group", name=name, members=tuple(members))
 
 
 def cmd(program, *args, input=None):
@@ -29,11 +47,14 @@ class FakeConfigLoader:
         self.cfg = cfg if cfg is not None else Config()
         self.missing = []
         self.not_found: ConfigNotFoundError | None = None
+        self.cfg_error: ConfigError | None = None
 
     def load(self) -> Config:
         self.calls.append("load")
         if self.not_found is not None:
             raise self.not_found
+        if self.cfg_error is not None:
+            raise self.cfg_error
         return self.cfg
 
     def missing_dirs(self, cfg):
@@ -77,6 +98,7 @@ class FakeClassifier:
         self.calls: list[str] = []
         self.selection = selection if selection is not None else Selection((), ())
         self.classified = classified
+        self.lines = []
 
     def classify_args(self, argv: Sequence[str]):
         self.calls.append("classify_args")
@@ -84,6 +106,7 @@ class FakeClassifier:
 
     def classify_selection(self, lines: list[str]) -> Selection:
         self.calls.append("classify_selection")
+        self.lines = lines
         return self.selection
 
 
@@ -253,20 +276,8 @@ def test_empty_picker_selection_returns_zero_executor_not_called():
     assert deps.executor.calls == []
 
 
-def test_interactive_flow_validates_workspaces_before_picker():
-    loader = FakeConfigLoader(cfg=Config(tmuxp_workspaces=(BAD_WS,)))
-    messages = FakeMessages()
-    executor = FakeExecutor()
-    deps = make_deps(config_loader=loader, messages=messages, executor=executor)
-    assert interactive_flow(deps) == 1
-    assert messages.calls == ["workspace_problems"]
-    assert "windows" in " ".join(messages.problems)
-    assert executor.calls == []
-    assert deps.picker.calls == []
-
-
 def test_interactive_flow_lists_workspace_labels_and_builds_selection():
-    loader = FakeConfigLoader(cfg=Config(tmuxp_workspaces=(WS_DEF,)))
+    loader = FakeConfigLoader(cfg=Config(sessions=(ws_entry(),)))
     executor = FakeExecutor()
     deps = make_deps(
         config_loader=loader,
@@ -296,7 +307,7 @@ def test_interactive_flow_lists_workspace_labels_and_builds_selection():
 
 
 def test_interactive_flow_splits_workspace_labels_from_dir_lines():
-    loader = FakeConfigLoader(cfg=Config(tmuxp_workspaces=(WS_DEF,)))
+    loader = FakeConfigLoader(cfg=Config(sessions=(ws_entry(),)))
     executor = FakeExecutor()
     deps = make_deps(
         config_loader=loader,
@@ -335,7 +346,7 @@ def test_full_wiring_replaceable_executor(monkeypatch, tmp_path):
     project = tmp_path / "projects" / "one"
     project.mkdir(parents=True)
     cfg_path = tmp_path / "config.toml"
-    cfg_path.write_text(f'additional_dirs = ["{project}"]\n')
+    cfg_path.write_text(f'sessions = ["{project}"]\n')
     monkeypatch.setenv("MULTI_SESSIONIZER_CONFIG", str(cfg_path))
 
     deps = FlowDeps(
@@ -446,3 +457,79 @@ def test_run_selection_reports_provisioning_error():
     assert run_selection(Selection((), (WS_DEF,)), deps) == 1
     assert messages.calls == ["error"]
     assert "tmuxp is required" in messages.errors[0]
+
+
+def test_unified_picker_mixes_dir_tmuxp_and_group_lines():
+    g = group_entry("stack", [dir_entry("/tmp/b"), ws_entry()])
+    loader = FakeConfigLoader(
+        cfg=Config(
+            sessions=(
+                dir_entry("/tmp/a"),
+                ws_entry(),
+                g,
+            )
+        )
+    )
+    deps = make_deps(
+        config_loader=loader,
+        discovery=FakeDiscovery(dirs=[]),
+        scorer=FakeScorer(""),
+    )
+    assert interactive_flow(deps) == 0
+    assert deps.picker.items == ["/tmp/a", "[tmuxp] myws", "[group] stack"]
+
+
+def test_selecting_group_expands_to_flat_selection():
+    g = group_entry(
+        "stack",
+        [dir_entry("/tmp/b"), ws_entry(), dir_entry("/tmp/c")],
+    )
+    loader = FakeConfigLoader(cfg=Config(sessions=(g,)))
+    executor = FakeExecutor()
+    deps = make_deps(
+        config_loader=loader,
+        picker=FakePicker(selected=["[group] stack"]),
+        classifier=FakeClassifier(selection=Selection(("/tmp/b", "/tmp/c"), ())),
+        probe=FakeProbe(snapshot=RuntimeSnapshot(False, False, {})),
+        executor=executor,
+    )
+    assert interactive_flow(deps) == 0
+    assert deps.classifier.calls == ["classify_selection"]
+    assert deps.classifier.lines == ["/tmp/b", "/tmp/c"]
+    assert executor.calls == ["execute"]
+
+
+def test_duplicate_group_names_are_disambiguated_and_selectable():
+    g1 = group_entry("stack", [dir_entry("/tmp/a")])
+    g2 = group_entry("stack", [dir_entry("/tmp/b")])
+    loader = FakeConfigLoader(cfg=Config(sessions=(g1, g2)))
+    executor = FakeExecutor()
+    deps = make_deps(
+        config_loader=loader,
+        discovery=FakeDiscovery(dirs=[]),
+        scorer=FakeScorer(""),
+        picker=FakePicker(selected=["[group] stack-2"]),
+        classifier=FakeClassifier(selection=Selection(("/tmp/b",), ())),
+        probe=FakeProbe(snapshot=RuntimeSnapshot(False, False, {})),
+        executor=executor,
+    )
+    assert interactive_flow(deps) == 0
+    assert deps.picker.items == ["[group] stack", "[group] stack-2"]
+    assert deps.classifier.lines == ["/tmp/b"]
+    assert executor.calls == ["execute"]
+
+
+def test_config_error_surfaces_via_error_and_returns_one():
+    loader = FakeConfigLoader(cfg=Config())
+    loader.cfg_error = ConfigError(
+        ["Group is missing a 'name'.", "Group 'g' has an empty 'sessions' list."]
+    )
+    messages = FakeMessages()
+    deps = make_deps(config_loader=loader, messages=messages, executor=FakeExecutor())
+    assert interactive_flow(deps) == 1
+    assert messages.calls == ["error", "error"]
+    assert messages.errors == [
+        "Group is missing a 'name'.",
+        "Group 'g' has an empty 'sessions' list.",
+    ]
+    assert deps.executor.calls == []

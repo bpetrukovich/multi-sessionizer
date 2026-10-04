@@ -59,10 +59,20 @@ Configuration lives in `~/.config/multi-sessionizer/config.toml` (override the p
 |---|---|
 | `project_roots_depth_1` | project roots searched 1 level deep: their direct subdirectories become entries |
 | `project_roots_depth_2` | project roots searched 2 levels deep: subdirectories and their direct children become entries |
-| `additional_dirs` | directories added to the list directly |
-| `tmuxp_workspaces` | inline tmuxp workspace YAML strings, one per picker entry |
+| `sessions` | a unified list of directory strings, inline tmuxp workspace strings, and named groups (see below) |
 
 Hidden directories (starting with `.`, e.g. `.git`, `.config`) are listed in the picker like any other directory.
+
+The `sessions` list replaces the old `additional_dirs` and `tmuxp_workspaces`
+keys (which are removed). Each element is recognized by its shape:
+
+- **a directory string** — any string that is not workspace-shaped; expanded and
+  normalized, then added as a directory entry;
+- **a workspace string** — a string that parses to tmuxp workspace structure
+  (`windows` list); kept verbatim and shown as a `[tmuxp] <label>` line;
+- **a group table** — `{ name = "...", sessions = [ ... ] }`, a named collection
+  of directory and/or workspace strings; shown as a single `[group] <name>` line
+  that provisions one session per member when selected.
 
 ```toml
 project_roots_depth_1 = [
@@ -73,12 +83,11 @@ project_roots_depth_2 = [
     "$HOME/work",
 ]
 
-additional_dirs = [
+sessions = [
+    # a directory
     "$HOME/obsidian-vault",
-    "$HOME/.config/dotfiles",
-]
-
-tmuxp_workspaces = ["""
+    # a workspace
+    """
 session_name: "workbench"
 start_directory: "$HOME/workbench"
 windows:
@@ -87,14 +96,21 @@ windows:
       - shell_command: vim
   - window_name: shell
     shell_command: "make dev"
-"""]
+""",
+    # a named group of directories and workspaces
+    { name = "frontend stack",
+      sessions = [
+          "$HOME/work/web-frontend",
+          'session_name: "dev-server"\nwindows:\n  - shell_command: "yarn dev"',
+      ] },
+]
 ```
 
 ## Workspaces
 
 A **workspace** is a full tmuxp session definition (windows, panes, layouts,
-start directory, shell commands) supplied **inline** — either as a string in
-`tmuxp_workspaces` in the config file, or as an argument to the `session`
+start directory, shell commands) supplied **inline** — either as a workspace
+string in the config's `sessions` list, or as an argument to the `session`
 subcommand. Each configured string is one picker entry; each `session`
 argument is one workspace.
 
@@ -112,10 +128,10 @@ switch to it (never by session name). The declared `session_name` is honored
 verbatim; a workspace without one gets a deterministic `msz-<fingerprint[:12]>`
 name.
 
-**Validation**: before an interactive run every configured workspace is
-validated, and the `session` subcommand validates its input before building.
-Invalid definitions are rejected with a specific message and no session is
-created:
+**Validation**: the `session` subcommand validates its input before building,
+and a configured workspace is classified (recognized as workspace-shaped) when
+the config is loaded. Invalid definitions are rejected with a specific message
+and no session is created:
 
 - invalid YAML (parse error);
 - a root that is not a mapping;
@@ -125,10 +141,10 @@ created:
 The YAML itself is never `~`/environment-expanded by the tool (tmuxp governs
 path expansion); paths inside a definition are not pre-validated.
 
-**Array-readiness**: the domain models a selection as a flat collection of
-session specs, so a future "one entry / one CLI parameter expands into several
-sessions" is a surface-only change — the per-spec dedup and provisioning rules
-stay the same.
+**Groups**: a group table in `sessions` expands into its member sessions before
+planning, so the domain still sees a flat collection of session specs — the
+per-spec dedup and provisioning rules are identical for group members and
+top-level entries.
 
 ## Usage
 
@@ -146,10 +162,13 @@ The list contains:
 
 - all top-level directories inside `project_roots_depth_1`;
 - all directories up to the second level inside `project_roots_depth_2`;
-- the directories from `additional_dirs`;
-- the inline workspaces from `tmuxp_workspaces` (shown as `[tmuxp] <label>` lines).
+- the directory entries from `sessions`;
+- the workspace entries from `sessions` (shown as `[tmuxp] <label>` lines);
+- the named groups from `sessions` (shown as `[group] <name>` lines) — selecting
+  one provisions every member session in a single pick.
 
-Directories are sorted by frequency of use (zoxide); workspace entries are appended to the end of the list.
+Directories are sorted by frequency of use (zoxide); workspace and group entries
+are appended to the end of the list.
 
 ### Non-interactive mode (`switch`)
 

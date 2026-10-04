@@ -106,3 +106,67 @@ def test_help_shows_session_subcommand(capsys):
     assert main.main(["--help"]) == 0
     out = capsys.readouterr().out
     assert "session" in out
+
+
+def _interactive_with_config(tmp_path, monkeypatch, content):
+    cfg_path = tmp_path / "config.toml"
+    cfg_path.write_text(content)
+    monkeypatch.setenv("MULTI_SESSIONIZER_CONFIG", str(cfg_path))
+    return main.main([])
+
+
+def test_interactive_rejects_removed_additional_dirs(tmp_path, monkeypatch, capsys):
+    code = _interactive_with_config(tmp_path, monkeypatch, 'additional_dirs = ["/x"]\n')
+    assert code == 1
+    err = capsys.readouterr().err
+    assert (
+        "Configuration error: the 'additional_dirs' key is no longer supported; use 'sessions' instead."
+        in err
+    )
+
+
+def test_interactive_rejects_removed_tmuxp_workspaces(tmp_path, monkeypatch, capsys):
+    code = _interactive_with_config(tmp_path, monkeypatch, 'tmuxp_workspaces = ["a: 1"]\n')
+    assert code == 1
+    err = capsys.readouterr().err
+    assert (
+        "Configuration error: the 'tmuxp_workspaces' key is no longer supported; use 'sessions' instead."
+        in err
+    )
+
+
+def test_interactive_group_missing_name(tmp_path, monkeypatch, capsys):
+    code = _interactive_with_config(
+        tmp_path, monkeypatch, 'sessions = [{ sessions = ["/tmp/a"] }]\n'
+    )
+    assert code == 1
+    assert "Group is missing a 'name'." in capsys.readouterr().err
+
+
+def test_interactive_group_empty_sessions(tmp_path, monkeypatch, capsys):
+    code = _interactive_with_config(
+        tmp_path, monkeypatch, 'sessions = [{ name = "g", sessions = [] }]\n'
+    )
+    assert code == 1
+    assert "Group 'g' has an empty 'sessions' list." in capsys.readouterr().err
+
+
+def test_interactive_group_invalid_member(tmp_path, monkeypatch, capsys):
+    code = _interactive_with_config(
+        tmp_path, monkeypatch, 'sessions = [{ name = "g", sessions = [{ foo = 1 }] }]\n'
+    )
+    assert code == 1
+    assert (
+        "Group 'g' has an invalid member: expected a directory or workspace."
+        in capsys.readouterr().err
+    )
+
+
+def test_interactive_nested_group(tmp_path, monkeypatch, capsys):
+    code = _interactive_with_config(
+        tmp_path,
+        monkeypatch,
+        'sessions = [{ name = "o", sessions = [{ name = "i", sessions = ["/tmp/a"] }] }]\n',
+    )
+    assert code == 1
+    assert "Nested groups are not supported: group 'i'." in capsys.readouterr().err

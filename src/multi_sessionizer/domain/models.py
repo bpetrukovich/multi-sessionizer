@@ -19,6 +19,23 @@ class Selection:
 
 
 @dataclass(frozen=True)
+class SessionEntry:
+    """A single element of the unified ``sessions`` config list (FR-001).
+
+    A discriminated union over three forms: a directory (``kind ==
+    "directory"``), an inline tmuxp workspace (``kind == "workspace"``), or a
+    named group (``kind == "group"``). Group members are directory/workspace
+    entries only — nesting is rejected (FR-007).
+    """
+
+    kind: str  # "directory" | "workspace" | "group"
+    path: str = ""  # directory path (kind == "directory")
+    definition: str = ""  # authored YAML (kind == "workspace")
+    name: str = ""  # group label (kind == "group")
+    members: tuple[SessionEntry, ...] = ()  # group members (dir/workspace only)
+
+
+@dataclass(frozen=True)
 class SessionSpec:
     """The provisioning unit the plan iterates over (FR-022, research R5)."""
 
