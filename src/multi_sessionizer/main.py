@@ -35,7 +35,8 @@ from .infrastructure.runner import Runner
 USAGE = """\
 usage: multi-sessionizer [-h] [--version]
                          [switch PATH ...] [session YAML ...]
-                         [external add ENTRY | external list | external delete KEY]
+                         [external add [--tags TAG[,TAG...]] ENTRY
+                          | external list | external delete KEY]
 
 Create and switch between tmux project sessions.
 
@@ -44,7 +45,9 @@ With no arguments, opens the interactive fzf picker.
 subcommands:
   switch PATH [PATH ...]       open the given directories non-interactively
   session YAML [YAML ...]      provision the given inline tmuxp workspaces
-  external add ENTRY           permanently add a directory / workspace / group
+  external add [--tags TAG[,TAG...]] ENTRY
+                               permanently add a directory / workspace / group,
+                               with optional display tags ([tag] picker prefixes)
   external list                list externally added entries
   external delete KEY          delete an external entry by its key
 
@@ -95,6 +98,22 @@ def default_deps() -> FlowDeps:
     )
 
 
+def _split_tags(args: list[str]) -> tuple[list[str], list[str]]:
+    """Split ``--tags TAG[,TAG...]`` flags from positional entry arguments."""
+    positional: list[str] = []
+    tags: list[str] = []
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "--tags" and i + 1 < len(args):
+            tags.extend(t for t in args[i + 1].split(",") if t)
+            i += 2
+        else:
+            positional.append(arg)
+            i += 1
+    return positional, tags
+
+
 def _external_dispatch(args: list[str], deps: FlowDeps | None = None) -> int:
     deps = deps or default_deps()
     if not args:
@@ -103,10 +122,11 @@ def _external_dispatch(args: list[str], deps: FlowDeps | None = None) -> int:
         return 2
     verb, rest = args[0], args[1:]
     if verb == "add":
-        if not rest:
+        entry_args, tags = _split_tags(rest)
+        if not entry_args:
             print("multi-sessionizer: error: external add requires an ENTRY", file=sys.stderr)
             return 2
-        return add_external_flow(rest[0], deps)
+        return add_external_flow(entry_args[0], deps, tags=tags)
     if verb == "list":
         return list_external_flow(deps)
     if verb == "delete":

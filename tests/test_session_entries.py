@@ -82,7 +82,12 @@ def test_classify_group_with_tags():
     )
     assert problems == []
     assert entries == [
-        _entry(kind="group", name="stack", tags=("pp-000000",), members=(_entry(kind="directory", path="/tmp/a"),))
+        _entry(
+            kind="group",
+            name="stack",
+            tags=("pp-000000",),
+            members=(_entry(kind="directory", path="/tmp/a"),),
+        )
     ]
 
 

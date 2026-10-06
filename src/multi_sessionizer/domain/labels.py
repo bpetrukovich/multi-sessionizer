@@ -4,7 +4,7 @@ Every picker line is ``<tag>* <label>``: the structural tags (``tmuxp``,
 ``group``, ``external``) and any user-supplied tags all render as ``[tag]``
 prefixes through the single ``render_picker_line`` interface. ``parse_tags``
 validates a ``tags`` value (dedup, no whitespace/brackets). Purely functional:
-no subprocess, filesystem, or environment access.
+no process spawning, filesystem, or environment access.
 """
 
 from __future__ import annotations
@@ -33,8 +33,7 @@ def parse_tags(value: object) -> tuple[tuple[str, ...], str | None]:
         tag = tag.strip()
         if not tag or any(ch.isspace() for ch in tag) or "[" in tag or "]" in tag:
             return (), (
-                f"Invalid tag '{tag}': tags must be non-empty and free of "
-                "whitespace and brackets."
+                f"Invalid tag '{tag}': tags must be non-empty and free of whitespace and brackets."
             )
         if tag not in cleaned:
             cleaned.append(tag)

@@ -76,9 +76,7 @@ def _normalize(entry: SessionEntry) -> SessionEntry:
     """Realpath/expand directory paths; keep workspace definitions verbatim."""
     if entry.kind == "directory":
         expanded = os.path.expanduser(os.path.expandvars(entry.path))
-        return SessionEntry(
-            kind="directory", path=os.path.realpath(expanded), tags=entry.tags
-        )
+        return SessionEntry(kind="directory", path=os.path.realpath(expanded), tags=entry.tags)
     if entry.kind == "group":
         return SessionEntry(
             kind="group",

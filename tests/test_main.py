@@ -117,7 +117,8 @@ def test_help_shows_session_subcommand(capsys):
 def test_help_shows_external_subcommand(capsys):
     assert main.main(["--help"]) == 0
     out = capsys.readouterr().out
-    assert "external add ENTRY" in out
+    assert "external add" in out
+    assert "--tags" in out
     assert "external list" in out
     assert "external delete KEY" in out
 
@@ -136,13 +137,41 @@ def test_external_dispatch_add_missing_entry(capsys):
 def test_external_dispatch_add(monkeypatch):
     captured = {}
 
-    def fake_add(arg, deps):
+    def fake_add(arg, deps, tags=()):
         captured["arg"] = arg
+        captured["tags"] = tags
         return 0
 
     monkeypatch.setattr(main, "add_external_flow", fake_add)
     assert main.main(["external", "add", "/x/y"]) == 0
     assert captured["arg"] == "/x/y"
+    assert captured["tags"] == []
+
+
+def test_split_tags_positional_and_flags():
+    assert main._split_tags(["/x/y"]) == (["/x/y"], [])
+    assert main._split_tags(["--tags", "a,b", "/x/y"]) == (["/x/y"], ["a", "b"])
+    assert main._split_tags(["--tags", "a", "--tags", "b", "/x/y"]) == (["/x/y"], ["a", "b"])
+    assert main._split_tags(["--tags"]) == (["--tags"], [])
+
+
+def test_external_dispatch_add_with_tags(monkeypatch):
+    captured = {}
+
+    def fake_add(arg, deps, tags=()):
+        captured["arg"] = arg
+        captured["tags"] = tags
+        return 0
+
+    monkeypatch.setattr(main, "add_external_flow", fake_add)
+    assert main.main(["external", "add", "--tags", "pp-1,backend", "/x/y"]) == 0
+    assert captured["arg"] == "/x/y"
+    assert captured["tags"] == ["pp-1", "backend"]
+
+
+def test_external_dispatch_add_tags_only_is_missing_entry(capsys):
+    assert main.main(["external", "add", "--tags", "pp-1"]) == 2
+    assert "external add requires an ENTRY" in capsys.readouterr().err
 
 
 def test_external_dispatch_list(monkeypatch):

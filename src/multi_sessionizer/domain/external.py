@@ -66,9 +66,7 @@ def classify_external_input(
                 return None, [_TAGS_TWICE]
             definition = arg if "tags" not in data else _strip_tags(data)
             return (
-                SessionEntry(
-                    kind="workspace", definition=definition, tags=doc_tags or tuple(tags)
-                ),
+                SessionEntry(kind="workspace", definition=definition, tags=doc_tags or tuple(tags)),
                 [],
             )
         name = data.get("name")
@@ -84,7 +82,10 @@ def classify_external_input(
                 return None, [_TAGS_TWICE]
             return (
                 SessionEntry(
-                    kind="group", name=group.name, tags=group.tags or tuple(tags), members=group.members
+                    kind="group",
+                    name=group.name,
+                    tags=group.tags or tuple(tags),
+                    members=group.members,
                 ),
                 [],
             )

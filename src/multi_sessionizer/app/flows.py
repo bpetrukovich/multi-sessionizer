@@ -16,6 +16,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from ..domain.external import classify_external_input, deletion_key, resolve_delete
+from ..domain.labels import render_picker_line
 from ..domain.models import Selection, SessionEntry
 from ..domain.rank import parse_zoxide_scores, rank_dirs
 from ..domain.run import ProvisioningError, run
@@ -25,12 +26,12 @@ from .ports import ExternalStoreError, FlowDeps
 
 
 def external_label(entry: SessionEntry) -> str:
-    """Picker line for an external entry: ``[external] <path|name|desired_name>``."""
-    return f"[external] {deletion_key(entry)}"
+    """Picker line for an external entry: ``[external] [tag...] <key>``."""
+    return render_picker_line(("external", *entry.tags), deletion_key(entry))
 
 
-def add_external_flow(arg: str, deps: FlowDeps) -> int:
-    entry, problems = classify_external_input(arg)
+def add_external_flow(arg: str, deps: FlowDeps, tags: Sequence[str] = ()) -> int:
+    entry, problems = classify_external_input(arg, tags=tags)
     if entry is None:
         for problem in problems:
             deps.messages.error(problem)
@@ -113,7 +114,7 @@ def _disambiguated(
 
 
 def _group_display(entry: SessionEntry) -> str:
-    return f"[group] {entry.name}"
+    return render_picker_line(("group", *entry.tags), entry.name)
 
 
 def interactive_flow(deps: FlowDeps) -> int:

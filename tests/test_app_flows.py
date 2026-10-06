@@ -15,6 +15,7 @@ from multi_sessionizer.app.configuration import Config, ConfigError, ConfigNotFo
 from multi_sessionizer.app.flows import (
     add_external_flow,
     delete_external_flow,
+    external_label,
     interactive_flow,
     list_external_flow,
     run_selection,
@@ -592,6 +593,36 @@ def test_duplicate_group_names_are_disambiguated_and_selectable():
     assert executor.calls == ["execute"]
 
 
+def test_interactive_flow_group_with_tags_renders_tag_prefixes():
+    g = SessionEntry(kind="group", name="stack", tags=("pp-1",), members=(dir_entry("/tmp/a"),))
+    loader = FakeConfigLoader(cfg=Config(sessions=(g,)))
+    deps = make_deps(
+        config_loader=loader,
+        discovery=FakeDiscovery(dirs=[]),
+        scorer=FakeScorer(""),
+        picker=FakePicker(selected=["[group] [pp-1] stack"]),
+        classifier=FakeClassifier(selection=Selection(("/tmp/a",), ())),
+        executor=FakeExecutor(),
+    )
+    assert interactive_flow(deps) == 0
+    assert deps.picker.items == ["[group] [pp-1] stack"]
+
+
+def test_interactive_flow_external_tagged_entry_renders_tags():
+    store = FakeExternalStore(
+        entries=[SessionEntry(kind="directory", path="/x/y", tags=("pp-000000",))]
+    )
+    deps = make_deps(
+        config_loader=FakeConfigLoader(cfg=Config(sessions=())),
+        discovery=FakeDiscovery(dirs=[]),
+        scorer=FakeScorer(""),
+        picker=FakePicker(selected=[]),
+        external_store=store,
+    )
+    assert interactive_flow(deps) == 0
+    assert deps.picker.items == ["[external] [pp-000000] /x/y"]
+
+
 def test_config_error_surfaces_via_error_and_returns_one():
     loader = FakeConfigLoader(cfg=Config())
     loader.cfg_error = ConfigError(
@@ -638,6 +669,24 @@ def test_add_external_flow_invalid_entry_reports_and_never_stores():
     assert store.calls == []
     assert "error" in messages.calls
     assert len(messages.errors) == 1
+
+
+def test_add_external_flow_with_cli_tags_stores_tagged_directory():
+    store = FakeExternalStore()
+    messages = FakeMessages()
+    deps = make_deps(external_store=store, messages=messages)
+    assert add_external_flow("/x/y", deps, tags=("pp-000000",)) == 0
+    assert store.entries == [SessionEntry(kind="directory", path="/x/y", tags=("pp-000000",))]
+    assert messages.calls == ["external_added"]
+
+
+def test_external_label_includes_tags():
+    entry = SessionEntry(kind="directory", path="/x/y", tags=("pp-1", "backend"))
+    assert external_label(entry) == "[external] [pp-1] [backend] /x/y"
+
+
+def test_external_label_without_tags_is_unchanged():
+    assert external_label(dir_entry("/x/y")) == "[external] /x/y"
 
 
 def test_add_external_flow_duplicate_reports_error_and_returns_one():

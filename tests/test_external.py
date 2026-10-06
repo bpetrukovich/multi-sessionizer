@@ -123,7 +123,7 @@ def test_classify_directory_with_cli_tags():
 
 
 def test_classify_document_and_cli_tags_conflict():
-    doc = 'name: g\ntags: [pp-1]\nsessions:\n  - /a\n'
+    doc = "name: g\ntags: [pp-1]\nsessions:\n  - /a\n"
     entry, problems = classify_external_input(doc, tags=("pp-2",))
     assert entry is None
     assert problems == ["Tags are specified both in the entry and via '--tags'."]

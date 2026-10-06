@@ -15,6 +15,7 @@ Python 3.12+ rewrite of the original bash script: configuration moved to a TOML 
 - **zoxide statistics**: every opened directory is added to zoxide (`zoxide add`), and more frequently used projects appear higher in the picker.
 - **Configuration validation**: before an interactive run, the script verifies that all configured directories exist and all configured workspaces are valid; otherwise it prints a list of problems.
 - **External entries**: add, list, and delete picker entries (directory, inline tmuxp workspace, named group) from the CLI with the `external` subcommand. They live in a separate sqlite store and are merged into the picker under a distinct `[external]` label — without ever touching your config file.
+- **Unified picker tags**: every picker line is `[tag]* <label>` — the structural tags (`[tmuxp]`, `[group]`, `[external]`) and any user-supplied tags (`[pp-000000]`) all render through one interface, so external entries can carry free-form tags shown as `[external] [pp-000000] <label>`.
 - **Dot-free session names**: dots in directory names are replaced with underscores (e.g. `my.project` → `my_project`).
 - **Collision-safe session names**: duplicate basenames never share a session — the second and later ones get a numeric suffix (`dup`, `dup-2`, `dup-3`); an existing session is reused only when it points at the same directory, so you never silently land in someone else's cwd.
 
@@ -215,6 +216,9 @@ interactive picker under an `[external]` label alongside your config entries.
 # add a directory entry
 multi-sessionizer external add "$HOME/projects/web-frontend"
 
+# add a directory entry with display tags ([external] [pp-000000] <path>)
+multi-sessionizer external add --tags pp-000000,backend "$HOME/projects/web-frontend"
+
 # add an inline tmuxp workspace entry (shown as its session name)
 multi-sessionizer external add 'session_name: "project"
 windows:
@@ -222,6 +226,7 @@ windows:
 
 # add a named group entry (a YAML mapping with a name + sessions list)
 multi-sessionizer external add 'name: frontend stack
+tags: [pp-000000]
 sessions:
   - "$HOME/work/web-frontend"
   - |-
@@ -240,7 +245,10 @@ Deletion keys are printed by `external list`; for a directory the key is its
 realpath-normalized path, for a workspace its session name, and for a group its
 name. Deleting an entry only removes its row from the store — it never kills a
 running tmux session. A duplicate `external add` is rejected with a clear
-message.
+message. Tags are display-only metadata: they appear as `[tag]` prefixes in the
+picker and in `external list`, and never affect the deletion key, deduplication,
+or the tmux session name. Groups and workspaces declare tags with a top-level
+`tags:` key; a directory takes them from `--tags`. Passing both is rejected.
 
 Exit codes: `0` — success (including `--help`/`--version`), `1` — a bad path, an invalid workspace, a configuration problem, or a provisioning failure, `2` — an unknown command.
 

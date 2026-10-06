@@ -51,6 +51,7 @@ def _normalize_entry(entry: SessionEntry) -> SessionEntry:
             kind="group",
             name=entry.name,
             members=tuple(_normalize_entry(m) for m in entry.members),
+            tags=entry.tags,
         )
     return entry
 
