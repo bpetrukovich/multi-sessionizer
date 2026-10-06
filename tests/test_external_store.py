@@ -60,6 +60,56 @@ def test_add_group_round_trips_members():
     assert listed[0] == g
 
 
+def test_add_directory_with_tags_round_trips():
+    store = SqliteExternalStore(":memory:")
+    entry = SessionEntry(kind="directory", path="/x/y", tags=("pp-1", "pp-2"))
+    assert store.add(entry).ok is True
+    assert store.list_entries() == (entry,)
+
+
+def test_add_workspace_with_tags_round_trips():
+    store = SqliteExternalStore(":memory:")
+    entry = SessionEntry(kind="workspace", definition=WS, tags=("pp-000000",))
+    assert store.add(entry).ok is True
+    assert store.list_entries() == (entry,)
+
+
+def test_add_group_with_tags_round_trips():
+    store = SqliteExternalStore(":memory:")
+    entry = SessionEntry(
+        kind="group", name="ext-stack", tags=("pp-000000",), members=(dir_entry("/p/b"),)
+    )
+    assert store.add(entry).ok is True
+    assert store.list_entries() == (entry,)
+
+
+def test_legacy_schema_without_tags_column_is_migrated(tmp_path):
+    import sqlite3
+
+    db = str(tmp_path / "legacy.db")
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE external_entries ("
+        " id INTEGER PRIMARY KEY,"
+        " kind TEXT NOT NULL,"
+        " path TEXT, definition TEXT, name TEXT,"
+        " UNIQUE (path) UNIQUE (definition) UNIQUE (name))"
+    )
+    conn.execute(
+        "INSERT INTO external_entries (kind, path, definition, name) VALUES (?, ?, ?, ?)",
+        ("directory", "/old/path", None, None),
+    )
+    conn.commit()
+    conn.close()
+
+    store = SqliteExternalStore(db)
+    assert store.list_entries() == (SessionEntry(kind="directory", path="/old/path"),)
+    assert store.add(SessionEntry(kind="directory", path="/new/path", tags=("t1",))).ok is True
+    entries = store.list_entries()
+    assert len(entries) == 2
+    assert entries[1].tags == ("t1",)
+
+
 @pytest.mark.parametrize(
     "entry", [dir_entry("/dup"), ws_entry(WS), group_entry("g", [dir_entry("/p/m")])]
 )

@@ -15,8 +15,10 @@ separate members column. A corrupt or unreadable store raises the app-owned
 
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
+import threading
 from pathlib import Path
 
 import yaml
@@ -36,9 +38,30 @@ CREATE TABLE IF NOT EXISTS external_entries (
     path       TEXT,
     definition TEXT,
     name       TEXT,
+    tags       TEXT,
     UNIQUE (path) UNIQUE (definition) UNIQUE (name)
 );
 """
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Add columns introduced after the initial schema (guarded, idempotent)."""
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(external_entries)")}
+    if "tags" not in cols:
+        conn.execute("ALTER TABLE external_entries ADD COLUMN tags TEXT")
+
+
+def _decode_tags(raw: str | None) -> tuple[str, ...]:
+    if not raw:
+        return ()
+    try:
+        values = json.loads(raw)
+    except ValueError:
+        return ()
+    return tuple(v for v in values if isinstance(v, str))
+
+
+_CONNECT_LOCK = threading.Lock()
 
 
 def store_path() -> Path:
@@ -53,12 +76,15 @@ def _normalize(entry: SessionEntry) -> SessionEntry:
     """Realpath/expand directory paths; keep workspace definitions verbatim."""
     if entry.kind == "directory":
         expanded = os.path.expanduser(os.path.expandvars(entry.path))
-        return SessionEntry(kind="directory", path=os.path.realpath(expanded))
+        return SessionEntry(
+            kind="directory", path=os.path.realpath(expanded), tags=entry.tags
+        )
     if entry.kind == "group":
         return SessionEntry(
             kind="group",
             name=entry.name,
             members=tuple(_normalize(m) for m in entry.members),
+            tags=entry.tags,
         )
     return entry
 
@@ -70,12 +96,13 @@ def _serialize_group(entry: SessionEntry) -> str:
     return yaml.safe_dump({"name": entry.name, "sessions": sessions})
 
 
-def _reconstruct_group(name: str, definition: str) -> SessionEntry:
+def _reconstruct_group(name: str, definition: str, tags: tuple[str, ...] = ()) -> SessionEntry:
     data = yaml.safe_load(definition)
     entries, problems = classify_sessions([data])
     if problems or len(entries) != 1 or entries[0].kind != "group":
         raise ExternalStoreError(f"Corrupt external group entry '{name}'.")
-    return entries[0]
+    group = entries[0]
+    return SessionEntry(kind="group", name=group.name, tags=tags, members=group.members)
 
 
 class SqliteExternalStore:
@@ -87,12 +114,15 @@ class SqliteExternalStore:
 
     def _connect(self) -> sqlite3.Connection:
         if self._conn is None:
-            parent = os.path.dirname(self._path)
-            if parent:
-                os.makedirs(parent, exist_ok=True)
-            self._conn = sqlite3.connect(self._path)
-            self._conn.execute("PRAGMA journal_mode=WAL")
-            self._conn.execute(_SCHEMA)
+            with _CONNECT_LOCK:  # serialize schema DDL across threads
+                if self._conn is None:
+                    parent = os.path.dirname(self._path)
+                    if parent:
+                        os.makedirs(parent, exist_ok=True)
+                    self._conn = sqlite3.connect(self._path)
+                    self._conn.execute("PRAGMA journal_mode=WAL")
+                    self._conn.execute(_SCHEMA)
+                    _migrate(self._conn)
         return self._conn
 
     def _run(self, fn):
@@ -111,9 +141,9 @@ class SqliteExternalStore:
         try:
             self._run(
                 lambda conn: conn.execute(
-                    "INSERT INTO external_entries (kind, path, definition, name)"
-                    " VALUES (?, ?, ?, ?)",
-                    (stored.kind, path, definition, name),
+                    "INSERT INTO external_entries (kind, path, definition, name, tags)"
+                    " VALUES (?, ?, ?, ?, ?)",
+                    (stored.kind, path, definition, name, json.dumps(list(stored.tags))),
                 )
             )
         except sqlite3.IntegrityError:
@@ -155,22 +185,23 @@ class SqliteExternalStore:
     @staticmethod
     def _rows(conn):
         return conn.execute(
-            "SELECT id, kind, path, definition, name FROM external_entries ORDER BY id"
+            "SELECT id, kind, path, definition, name, tags FROM external_entries ORDER BY id"
         ).fetchall()
 
     @staticmethod
     def _row_to_entry(row) -> SessionEntry:
-        _, kind, path, definition, name = row
+        _, kind, path, definition, name, tags = row
+        tags_tuple = _decode_tags(tags)
         if kind == "group":
-            return _reconstruct_group(name, definition)
+            return _reconstruct_group(name, definition, tags_tuple)
         if kind == "workspace":
-            return SessionEntry(kind="workspace", definition=definition)
-        return SessionEntry(kind="directory", path=path)
+            return SessionEntry(kind="workspace", definition=definition, tags=tags_tuple)
+        return SessionEntry(kind="directory", path=path, tags=tags_tuple)
 
     @staticmethod
     def _find_row(rows, entry: SessionEntry):
         for row in rows:
-            _, kind, path, definition, name = row
+            _, kind, path, definition, name, _tags = row
             if kind == "group" and name == entry.name:
                 return row
             if kind == "workspace" and definition == entry.definition:
