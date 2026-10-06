@@ -33,6 +33,7 @@ class SessionEntry:
     definition: str = ""  # authored YAML (kind == "workspace")
     name: str = ""  # group label (kind == "group")
     members: tuple[SessionEntry, ...] = ()  # group members (dir/workspace only)
+    tags: tuple[str, ...] = ()  # user-supplied picker tags (display only)
 
 
 @dataclass(frozen=True)

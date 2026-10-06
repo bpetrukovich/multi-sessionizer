@@ -15,6 +15,7 @@ from typing import Any
 
 import yaml
 
+from .labels import parse_tags
 from .models import SessionEntry
 
 _INVALID_MEMBER_DETAIL = "expected a directory or workspace"
@@ -66,6 +67,10 @@ def _classify_item(item: object) -> tuple[SessionEntry | None, list[str]]:
         if not (isinstance(sessions, list) and sessions):
             return None, [f"Group '{name}' has an empty 'sessions' list."]
 
+        tags, tag_problem = parse_tags(item.get("tags"))
+        if tag_problem is not None:
+            return None, [f"Group '{name}' has invalid tags: {tag_problem}"]
+
         members: list[SessionEntry] = []
         problems: list[str] = []
         for member in sessions:
@@ -76,7 +81,7 @@ def _classify_item(item: object) -> tuple[SessionEntry | None, list[str]]:
                 members.append(entry)
         if problems:
             return None, problems
-        return SessionEntry(kind="group", name=name, members=tuple(members)), []
+        return SessionEntry(kind="group", name=name, tags=tags, members=tuple(members)), []
 
     return None, [
         f"Invalid 'sessions' element: expected a string or table, got {type(item).__name__}."

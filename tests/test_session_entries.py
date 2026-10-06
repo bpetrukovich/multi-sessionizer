@@ -76,6 +76,34 @@ def test_classify_group_table():
     )
 
 
+def test_classify_group_with_tags():
+    entries, problems = classify_sessions(
+        [{"name": "stack", "tags": ["pp-000000", "pp-000000"], "sessions": ["/tmp/a"]}]
+    )
+    assert problems == []
+    assert entries == [
+        _entry(kind="group", name="stack", tags=("pp-000000",), members=(_entry(kind="directory", path="/tmp/a"),))
+    ]
+
+
+def test_classify_group_invalid_tags_is_problem():
+    entries, problems = classify_sessions(
+        [{"name": "stack", "tags": "pp-1", "sessions": ["/tmp/a"]}]
+    )
+    assert entries == []
+    assert len(problems) == 1
+    assert "invalid tags" in problems[0]
+
+
+def test_classify_group_tag_with_whitespace_is_problem():
+    entries, problems = classify_sessions(
+        [{"name": "stack", "tags": ["pp 1"], "sessions": ["/tmp/a"]}]
+    )
+    assert entries == []
+    assert len(problems) == 1
+    assert "Invalid tag" in problems[0]
+
+
 def test_classify_mixed_top_level():
     entries, problems = classify_sessions(["/tmp/a", WS_DEF, {"name": "g", "sessions": ["/tmp/b"]}])
     assert problems == []

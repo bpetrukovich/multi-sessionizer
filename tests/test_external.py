@@ -85,6 +85,58 @@ def test_classify_invalid_group_member_is_rejected():
     assert problems
 
 
+def test_classify_group_with_tags():
+    entry, problems = classify_external_input(
+        "name: ext-stack\ntags:\n  - pp-000000\nsessions:\n  - /home/u/tmp/msz-proj-b\n"
+    )
+    assert problems == []
+    assert entry == SessionEntry(
+        kind="group",
+        name="ext-stack",
+        tags=("pp-000000",),
+        members=(dir_entry("/home/u/tmp/msz-proj-b"),),
+    )
+
+
+def test_classify_workspace_with_tags_strips_tags_from_definition():
+    doc = 'session_name: "ext-ws"\ntags: [pp-1]\nwindows:\n  - shell_command: "echo hi"\n'
+    entry, problems = classify_external_input(doc)
+    assert problems == []
+    assert entry.kind == "workspace"
+    assert entry.tags == ("pp-1",)
+    assert "tags" not in entry.definition
+    assert "session_name: ext-ws" in entry.definition
+
+
+def test_classify_workspace_without_tags_keeps_definition_verbatim():
+    entry, problems = classify_external_input(WS)
+    assert problems == []
+    assert entry.kind == "workspace"
+    assert entry.definition == WS
+    assert entry.tags == ()
+
+
+def test_classify_directory_with_cli_tags():
+    entry, problems = classify_external_input(DIR, tags=("pp-000000",))
+    assert problems == []
+    assert entry == SessionEntry(kind="directory", path=DIR, tags=("pp-000000",))
+
+
+def test_classify_document_and_cli_tags_conflict():
+    doc = 'name: g\ntags: [pp-1]\nsessions:\n  - /a\n'
+    entry, problems = classify_external_input(doc, tags=("pp-2",))
+    assert entry is None
+    assert problems == ["Tags are specified both in the entry and via '--tags'."]
+
+
+def test_classify_workspace_invalid_tags_rejected():
+    doc = 'session_name: "ext-ws"\ntags: [pp 1]\nwindows:\n  - shell_command: "echo hi"\n'
+    entry, problems = classify_external_input(doc)
+    assert entry is None
+    assert problems
+    assert "Invalid tag" in problems[0]
+
+
 # --- deletion_key -------------------------------------------------------------
 
 

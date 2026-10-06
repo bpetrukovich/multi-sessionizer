@@ -16,6 +16,7 @@ from dataclasses import dataclass
 
 import yaml
 
+from .labels import render_picker_line
 from .naming import workspace_fallback_name
 
 
@@ -86,8 +87,8 @@ def desired_name(definition: str) -> str:
 
 
 def workspace_label(definition: str) -> str:
-    """Picker line for a workspace entry (R10)."""
-    return f"[tmuxp] {desired_name(definition)}"
+    """Picker line for a workspace entry: ``[tmuxp] <desired_name>`` (R10)."""
+    return render_picker_line(("tmuxp",), desired_name(definition))
 
 
 def picker_labels(definitions: Iterable[str]) -> list[str]:
