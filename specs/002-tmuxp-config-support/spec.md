@@ -126,7 +126,7 @@ A clear, documented way to express inline workspaces both in the config file (as
 - **FR-004**: The tool MUST support tmuxp workspace definitions supplied inline (not as config file paths), both in the interactive config and on the CLI.
 - **FR-005**: The tool MUST support the YAML workspace format of tmuxp (chosen format; JSON documents that are also valid YAML are accepted, but JSON is not a formally supported surface).
 - **FR-006**: When a workspace is provisioned, the resulting session MUST reproduce the workspace definition: window names, panes, layouts, start directories, and shell commands.
-- **FR-007**: Interactive config entries: inline workspaces declared in the config MUST appear in the interactive picker alongside directories; the picker label is the workspace's `session_name`, or a tool-derived label when none is declared.
+- **FR-007**: Interactive config entries: inline workspaces declared in the config MUST appear in the interactive picker alongside directories; the picker label is `[tmuxp] <session_name>`, or `[tmuxp] <tool-derived label>` when none is declared, rendered through the unified tagged-label interface (feature 005).
 - **FR-008**: CLI: the user MUST be able to pass an inline workspace through a dedicated subcommand (proposed name `session`, e.g. `multi-sessionizer session '<yaml>'`), keeping `switch` reserved for directory paths.
 - **FR-009**: Mixed selections (directories and workspaces together) MUST be supported with the same single-plan/single-post-step behavior as today's mixed directory/file selections.
 

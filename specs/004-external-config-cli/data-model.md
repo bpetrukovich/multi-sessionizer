@@ -25,6 +25,7 @@ unique row identity:
 | `path` | `TEXT` | directory path, realpath-normalized (kind == `directory`); `UNIQUE` when non-null |
 | `definition` | `TEXT` | authored workspace YAML, verbatim (kind == `workspace`); `UNIQUE` when non-null |
 | `name` | `TEXT` | group name (kind == `group`); `UNIQUE` when non-null |
+| `tags` | `TEXT` | JSON array of display tags, added by feature 005; `NULL`/empty means no tags |
 
 Dedup constraints (FR-005), one per type:
 - `UNIQUE(path)` for directory entries;

@@ -82,7 +82,7 @@ A group whose name is missing, whose members are malformed, or that nests groups
 
 #### Named groups
 
-- **FR-004**: A group MUST appear in the interactive picker as a single entry labeled by its `name`.
+- **FR-004**: A group MUST appear in the interactive picker as a single entry labeled `[group] <name>` (plus any user-supplied `[tag...]` prefixes) via the unified tagged-label interface (feature 005).
 - **FR-005**: Selecting a group MUST provision a separate session for each of its members and attach the user to one of them, with the same switch-vs-create behavior as selecting the members individually.
 - **FR-006**: A group MUST NOT be provisionable as a single merged session; its members always map to distinct sessions.
 - **FR-007**: Groups MUST NOT nest: a group whose `sessions` array contains another group table MUST be rejected.

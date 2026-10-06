@@ -71,7 +71,7 @@ External entries are first-class members of the interactive picker: they are mul
 
 1. **Given** a picker listing both config-file and external entries, **When** the user multi-selects across both, **Then** each selected entry is provisioned/switched exactly once, in a single plan and post-step.
 2. **Given** an external entry and a config-file entry that resolve to the same session, **When** both are opened, **Then** dedup is per entry (each maps to its own session) consistent with existing rules.
-3. **Given** the fzf picker, **When** external entries are present, **Then** each is shown with a clear `[external]` label prefix distinct from `[tmuxp]` and `[group]`.
+3. **Given** the fzf picker, **When** external entries are present, **Then** each is shown with a clear `[external]` label prefix distinct from `[tmuxp]` and `[group]`, with any user tags as `[tag]` prefixes after it.
 
 ---
 
@@ -102,14 +102,14 @@ External entries are first-class members of the interactive picker: they are mul
 
 - **FR-006**: The tool MUST expose CLI subcommands to add, list, and delete external entries; these MUST be reachable without opening the interactive picker.
 - **FR-007**: The add command MUST accept the same valid entry forms as the config `sessions` array — a directory string, an inline tmuxp workspace string, and a named group — and MUST validate them the same way before storing.
-- **FR-008**: The list command MUST show each external entry with its type, its picker label, and its deletion key.
+- **FR-008**: The list command MUST show each external entry with its type, its picker label (including any `[tag...]` prefixes), and its deletion key.
 - **FR-009**: Deletion MUST be keyed by: the path for a directory entry, the session name for a workspace entry, and the group name for a group entry; a delete MUST affect only external entries and MUST NOT modify the config file.
 - **FR-010**: Deleting a key that matches no external entry MUST produce a clear error and a non-zero exit code, and MUST NOT change the store.
 - **FR-011**: The exit-code contract MUST be preserved: 0 success, 1 bad path/config, 2 unknown command.
 
 #### Picker integration
 
-- **FR-012**: External entries MUST be labeled distinctly in the fzf picker, e.g. a `[external]` prefix, distinguishable from `[tmuxp]` and `[group]` labels.
+- **FR-012**: External entries MUST be labeled `[external] <key>` in the fzf picker (plus any user-supplied `[tag...]` prefixes), distinguishable from `[tmuxp]` and `[group]` labels, all rendered through the unified tagged-label interface (feature 005).
 - **FR-013**: External entries MUST behave identically to their config-file counterparts for provisioning, switch-vs-create (marker-based), per-entry dedup, collision naming, processing order, and the single-plan/single-post-step flow.
 - **FR-014**: Deletion of an external entry MUST NOT destroy any live tmux session it provisioned.
 
@@ -141,6 +141,6 @@ External entries are first-class members of the interactive picker: they are mul
 - **Thread safety**: concurrent operations are required and are best served by a store with transactional semantics; if sqlite is chosen it becomes a documented dependency.
 - **Entry forms**: the add command mirrors the config `sessions` forms (directory, inline workspace, group), so users do not learn a second schema.
 - **Deletion does not destroy sessions**: the tool is stateless about live tmux sessions (feature 002/003); deleting an external entry only removes the entry from the store, never a running session.
-- **Labeling**: external entries are prefixed `[external]` in the picker; the exact label text is a planning detail, but it must be distinct from `[tmuxp]` and `[group]`.
+- **Labeling**: external entries are prefixed `[external]` in the picker (structural tag), with optional user-supplied `[tag]` prefixes after it; the exact label text is a planning detail, but it must be distinct from `[tmuxp]` and `[group]`.
 - **Config immutability**: no external-config operation ever reads the user's config for storage decisions or writes it; the config file remains the user's own.
 - **Interaction with features 002/003**: this feature reuses the unified `sessions` entry model, marker-based switch-vs-create, and group expansion from features 002 and 003; those are dependencies for the workspace and group cases.
