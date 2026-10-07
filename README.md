@@ -341,3 +341,5 @@ uv run scripts/benchmark.py
 - **Session existence check**: instead of one `tmux has-session` call per path, the existing sessions are queried once with `tmux list-sessions`.
 
 test
+
+test2
