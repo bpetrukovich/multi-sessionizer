@@ -339,3 +339,5 @@ uv run scripts/benchmark.py
 - **Hidden directories are listed**: the bash version excluded directories with a hidden component (`.git`, `.config`, ...) and, as a side effect, silently ignored whole project roots whose own path contained a dot (e.g. `$HOME/.config/dotfiles`). The Python version lists hidden directories like any other and honors every configured root.
 - **Faster discovery**: the bash version used `find -maxdepth`, the Python version prunes the traversal at the configured depth too, so deep trees are never walked.
 - **Session existence check**: instead of one `tmux has-session` call per path, the existing sessions are queried once with `tmux list-sessions`.
+
+test
